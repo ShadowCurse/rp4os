@@ -1,5 +1,5 @@
 [package]
-name = "rp4_os"
+name = "rp4os"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,10 +8,18 @@ lto = true
 
 [features]
 default = []
+kernel = []
+kernelloader = []
 
 [[bin]]
 name = "kernel"
-path = "src/main.rs"
+path = "kernel/main.rs"
+required-features = ["kernel"]
+
+[[bin]]
+name = "kernelloader"
+path = "kernelloader/main.rs"
+required-features = ["kernelloader"]
 
 [dependencies]
 tock-registers = { version = "0.8.x", default-features = false, features = ["register_types"] }
