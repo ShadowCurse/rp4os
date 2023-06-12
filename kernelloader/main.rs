@@ -4,13 +4,9 @@
 #![no_main]
 #![no_std]
 
-mod bsp;
-mod console;
-mod cpu;
-mod driver;
-mod panic;
-mod print;
-mod synchronization;
+use rp4os::*;
+
+mod boot;
 
 /// Early init code.
 ///
@@ -34,40 +30,40 @@ unsafe fn kernel_init() -> ! {
 
 /// The main function running after the early init.
 fn kernel_main() -> ! {
-    use console::console;
-
     println!("Loaded on {:^37}", bsp::board_name());
-    println!("[ML] Requesting binary");
-    console().flush();
+    println!("[ML] Waiting for ready signal...");
+
+    let console = console::console();
+    console.flush();
 
     // Discard any spurious received characters before starting with the loader protocol.
-    console().clear_rx();
+    console.clear_rx();
 
-    // Notify `Minipush` to send the binary.
-    for _ in 0..3 {
-        console().write_char(3 as char);
-    }
+    // Wait for ready signal
+    while console.read_char() as u8 != 69 {}
 
     // Read the binary's size.
-    let mut size: u32 = u32::from(console().read_char() as u8);
-    size |= u32::from(console().read_char() as u8) << 8;
-    size |= u32::from(console().read_char() as u8) << 16;
-    size |= u32::from(console().read_char() as u8) << 24;
+    let mut size: u32 = u32::from(console.read_char() as u8);
+    size |= u32::from(console.read_char() as u8) << 8;
+    size |= u32::from(console.read_char() as u8) << 16;
+    size |= u32::from(console.read_char() as u8) << 24;
 
-    // Trust it's not too big.
-    console().write_char('O');
-    console().write_char('K');
+    // Ack signal
+    console.write_char(69 as char);
 
     let kernel_addr: *mut u8 = bsp::memory::board_default_load_addr() as *mut u8;
     unsafe {
         // Read the kernel byte by byte.
         for i in 0..size {
-            core::ptr::write_volatile(kernel_addr.offset(i as isize), console().read_char() as u8)
+            core::ptr::write_volatile(kernel_addr.offset(i as isize), console.read_char() as u8)
         }
     }
 
+    // Ack signal
+    console.write_char(69 as char);
+
     println!("[ML] Loaded! Executing the payload now\n");
-    console().flush();
+    console.flush();
 
     // Use black magic to create a function pointer.
     let kernel: fn() -> ! = unsafe { core::mem::transmute(kernel_addr) };
