@@ -8,6 +8,10 @@ use rp4os::*;
 
 mod boot;
 
+const KERNEL_LOAD_START_SIGNAL: u8 = 0x01;
+const KERNEL_LOAD_SIZE_ACK_SIGNAL: u8 = 0x02;
+const KERNEL_LOAD_ACK_SIGNAL: u8 = 0x03;
+
 /// Early init code.
 ///
 /// # Safety
@@ -30,8 +34,8 @@ unsafe fn kernel_init() -> ! {
 
 /// The main function running after the early init.
 fn kernel_main() -> ! {
-    println!("Loaded on {:^37}", bsp::board_name());
-    println!("[ML] Waiting for ready signal...");
+    println!("[Loader] Loaded on {:^37}", bsp::board_name());
+    println!("[Loader]  Waiting for ready signal...");
 
     let console = console::console();
     console.flush();
@@ -40,7 +44,7 @@ fn kernel_main() -> ! {
     console.clear_rx();
 
     // Wait for ready signal
-    while console.read_char() as u8 != 69 {}
+    while console.read_char() as u8 != KERNEL_LOAD_START_SIGNAL {}
 
     // Read the binary's size.
     let mut size: u32 = u32::from(console.read_char() as u8);
@@ -49,7 +53,7 @@ fn kernel_main() -> ! {
     size |= u32::from(console.read_char() as u8) << 24;
 
     // Ack signal
-    console.write_char(69 as char);
+    console.write_char(KERNEL_LOAD_SIZE_ACK_SIGNAL as char);
 
     let kernel_addr: *mut u8 = bsp::memory::board_default_load_addr() as *mut u8;
     unsafe {
@@ -60,10 +64,10 @@ fn kernel_main() -> ! {
     }
 
     // Ack signal
-    console.write_char(69 as char);
-
-    println!("[ML] Loaded! Executing the payload now\n");
+    console.write_char(KERNEL_LOAD_ACK_SIGNAL as char);
     console.flush();
+
+    println!("[Loader]  Loaded! Executing the payload now\n");
 
     // Use black magic to create a function pointer.
     let kernel: fn() -> ! = unsafe { core::mem::transmute(kernel_addr) };
