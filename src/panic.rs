@@ -1,6 +1,6 @@
 use core::panic::PanicInfo;
 
-use crate::{cpu, println};
+use crate::{cpu, println, time::uptime};
 
 /// Stop immediately if called a second time.
 ///
@@ -38,10 +38,13 @@ fn panic(info: &PanicInfo) -> ! {
         _ => ("???", 0, 0),
     };
 
+    let timestamp = uptime();
+
     println!(
-        "Kernel panic!\n\n\
+        "[{:#?}] Kernel panic!\n\n\
         Panic location:\n      File '{}', line {}, column {}\n\n\
         {}",
+        timestamp,
         location,
         line,
         column,

@@ -32,18 +32,23 @@ unsafe fn kernel_init() -> ! {
 fn kernel_main() -> ! {
     use console::console;
 
-    println!(
+    info!(
         "[0] {} version {}",
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION")
     );
-    println!("[1] Booting on: {}", bsp::board_name());
+    info!("[1] Booting on: {}", bsp::board_name());
 
-    println!("[2] Drivers loaded:");
+    info!(
+        "Architectural timer resolution: {} ns",
+        time::resolution().as_nanos()
+    );
+
+    info!("[2] Drivers loaded:");
     driver::driver_manager().enumerate();
 
-    println!("[3] Chars written: {}", console().chars_written());
-    println!("[4] Echoing input now");
+    info!("[3] Chars written: {}", console().chars_written());
+    info!("[4] Echoing input now");
 
     // Discard any spurious received characters before going into echo mode.
     console().clear_rx();

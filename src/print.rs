@@ -24,3 +24,47 @@ macro_rules! println {
         $crate::print::_print(format_args_nl!($($arg)*));
     })
 }
+
+/// Prints an info, with a newline.
+#[macro_export]
+macro_rules! info {
+    ($string:expr) => ({
+        let timestamp = $crate::time::uptime();
+
+        $crate::print::_print(format_args_nl!(
+            concat!("[{:#?}] ", $string),
+            timestamp,
+        ));
+    });
+    ($format_string:expr, $($arg:tt)*) => ({
+        let timestamp = $crate::time::uptime();
+
+        $crate::print::_print(format_args_nl!(
+            concat!("[{:#?}] ", $format_string),
+            timestamp,
+            $($arg)*
+        ));
+    })
+}
+
+/// Prints a warning, with a newline.
+#[macro_export]
+macro_rules! warn {
+    ($string:expr) => ({
+        let timestamp = $crate::time::uptime();
+
+        $crate::print::_print(format_args_nl!(
+            concat!("[{:#?}] WARN ", $string),
+            timestamp,
+        ));
+    });
+    ($format_string:expr, $($arg:tt)*) => ({
+        let timestamp = $crate::time::uptime();
+
+        $crate::print::_print(format_args_nl!(
+            concat!("[{:#?}] WARN ", $format_string),
+            timestamp,
+            $($arg)*
+        ));
+    })
+}
