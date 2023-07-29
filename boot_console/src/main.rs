@@ -12,7 +12,7 @@ const KERNEL_LOAD_START_SIGNAL: u8 = 0x01;
 const KERNEL_LOAD_SIZE_ACK_SIGNAL: u8 = 0x02;
 const KERNEL_LOAD_ACK_SIGNAL: u8 = 0x03;
 
-const KERNEL_TRANSFER_SPEED_BYTE_PER_SECOND: f32 = 0.001;
+const KERNEL_TRANSFER_SPEED_BYTE_PER_SECOND: f64 = 1024.0 * 1024.0;
 
 #[derive(Parser)]
 struct Cli {
@@ -133,7 +133,7 @@ async fn send_kernel(kernel_path: &PathBuf, async_serial: &mut tokio::fs::File) 
             eprintln!("Notifing loader...");
             let _ = async_serial.write_u8(KERNEL_LOAD_START_SIGNAL).await;
 
-            eprintln!("Writing kernel size...");
+            eprintln!("Writing kernel size: {} bytes...", kernel.len());
             for i in 0..4 {
                 let c = ((kernel.len() >> (8 * i)) & 0xFF) as u8;
                 let _ = async_serial.write_u8(c).await;
@@ -149,16 +149,17 @@ async fn send_kernel(kernel_path: &PathBuf, async_serial: &mut tokio::fs::File) 
 
             eprintln!(
                 "Sending kernel with speed: {} KB/s ...",
-                KERNEL_TRANSFER_SPEED_BYTE_PER_SECOND * 1024.0
+                KERNEL_TRANSFER_SPEED_BYTE_PER_SECOND / 1024.0
             );
+            let now = std::time::Instant::now();
             for (i, byte) in kernel.iter().enumerate() {
                 eprint!("\x1b[GSending {}/{} byte", i, kernel.len());
                 let _ = async_serial.write_u8(*byte).await;
-                std::thread::sleep(std::time::Duration::from_secs_f32(
-                    KERNEL_TRANSFER_SPEED_BYTE_PER_SECOND,
+                std::thread::sleep(std::time::Duration::from_secs_f64(
+                    1.0 / KERNEL_TRANSFER_SPEED_BYTE_PER_SECOND,
                 ));
             }
-            eprintln!();
+            eprintln!("\n Time took: {:#?}", now.elapsed());
 
             while async_serial.read_to_end(&mut buff).await.unwrap() == 0 {}
             if buff != [KERNEL_LOAD_ACK_SIGNAL] {
