@@ -12,5 +12,6 @@ pub mod cpu;
 pub mod driver;
 pub mod panic;
 pub mod print;
+pub mod priv_level;
 pub mod synchronization;
 pub mod time;

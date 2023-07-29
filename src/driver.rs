@@ -1,5 +1,5 @@
 use crate::{
-    info, println,
+    info,
     synchronization::{interface::Mutex, NullLock},
 };
 

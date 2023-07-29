@@ -13,6 +13,11 @@
 .section .text._start
 
 _start:
+	// Only proceed if the core executes in EL2. Park it otherwise.
+	mrs	x0, CurrentEL
+	cmp	x0, {CONST_CURRENTEL_EL2}
+	b.ne	.L_parking_loop
+
 	// Only proceed on the boot core. Park it otherwise.
 	mrs	x0, MPIDR_EL1
 	and	x0, x0, {CONST_CORE_ID_MASK}

@@ -39,6 +39,12 @@ fn kernel_main() -> ! {
     );
     info!("[1] Booting on: {}", bsp::board_name());
 
+    let (_, privilege_level) = priv_level::current_privilege_level();
+    info!("Current privilege level: {}", privilege_level);
+
+    info!("Exception handling state:");
+    priv_level::print_state();
+
     info!(
         "Architectural timer resolution: {} ns",
         time::resolution().as_nanos()
