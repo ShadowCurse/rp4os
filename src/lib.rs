@@ -12,6 +12,7 @@ pub mod console;
 pub mod cpu;
 pub mod mmu;
 pub mod driver;
+pub mod exception;
 pub mod panic;
 pub mod print;
 pub mod priv_level;

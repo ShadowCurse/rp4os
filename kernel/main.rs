@@ -17,6 +17,8 @@ mod boot;
 unsafe fn kernel_init() -> ! {
     use rp4os::mmu::interface::MMU;
 
+    exception::handling_init();
+
     if let Err(string) = mmu::mmu().enable_mmu_and_caching() {
         panic!("MMU: {}", string);
     }
