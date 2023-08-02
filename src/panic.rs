@@ -1,6 +1,6 @@
 use core::panic::PanicInfo;
 
-use crate::{cpu, println, time::uptime};
+use crate::{cpu, println, priv_level::local_irq_mask, time::uptime};
 
 /// Stop immediately if called a second time.
 ///
@@ -30,6 +30,8 @@ fn panic_prevent_reenter() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    local_irq_mask();
+
     // Protect against panic infinite loops if any of the following code panics itself.
     panic_prevent_reenter();
 

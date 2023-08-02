@@ -29,8 +29,14 @@ unsafe fn kernel_init() -> ! {
     }
 
     // Initialize all device drivers.
-    driver::driver_manager().init_drivers();
+    driver::DRIVER_MANAGER.init_drivers_and_irqs();
     // println! is usable from here on.
+
+    // Unmask interrupts on the boot CPU core.
+    priv_level::local_irq_unmask();
+
+    // Announce conclusion of the kernel_init() phase.
+    state::state_manager().transition_to_single_core_main();
 
     // Transition from unsafe to safe.
     kernel_main()
@@ -62,7 +68,7 @@ fn kernel_main() -> ! {
     );
 
     info!("[2] Drivers loaded:");
-    driver::driver_manager().enumerate();
+    driver::DRIVER_MANAGER.enumerate();
 
     {
         use rp4os::console::interface::Write;
@@ -75,12 +81,10 @@ fn kernel_main() -> ! {
     }
 
     info!("[3] Chars written: {}", console().chars_written());
-    info!("[4] Echoing input now");
 
-    // Discard any spurious received characters before going into echo mode.
-    console().clear_rx();
-    loop {
-        let c = console().read_char();
-        console().write_char(c);
-    }
+    info!("Registered IRQ handlers:");
+    exception::asynchronous::irq_manager().print_handler();
+
+    info!("Echoing input now");
+    cpu::wait_forever();
 }

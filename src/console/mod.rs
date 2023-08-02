@@ -1,9 +1,11 @@
-use crate::synchronization::{interface::Mutex, NullLock};
+use crate::console::interface::Console;
+use crate::synchronization::interface::ReadWriteEx;
+use crate::synchronization::InitStateLock;
 
 pub mod null_console;
 
-static CUR_CONSOLE: NullLock<&'static (dyn interface::Console + Sync)> =
-    NullLock::new(&null_console::NULL_CONSOLE);
+static CUR_CONSOLE: InitStateLock<&'static (dyn Console + Sync)> =
+    InitStateLock::new(&null_console::NULL_CONSOLE);
 
 /// Console interfaces.
 pub mod interface {
@@ -50,13 +52,13 @@ pub mod interface {
 }
 
 /// Register a new console.
-pub fn register_console(new_console: &'static (impl interface::Console + Sync)) {
-    CUR_CONSOLE.lock(|con| *con = new_console);
+pub fn register_console(new_console: &'static (impl Console + Sync)) {
+    CUR_CONSOLE.write(|con| *con = new_console);
 }
 
 /// Return a reference to the currently registered console.
 ///
 /// This is the global console used by all printing macros.
-pub fn console() -> &'static (dyn interface::Console + Sync) {
-    CUR_CONSOLE.lock(|con| *con)
+pub fn console() -> &'static (dyn Console + Sync) {
+    CUR_CONSOLE.read(|con| *con)
 }

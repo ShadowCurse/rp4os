@@ -1,14 +1,19 @@
-//! BSP driver support.
-
 use super::{
     drivers::{bcm2xxx_gpio::GPIO, bcm2xxx_pl011::PL011Uart},
-    memory::map::mmio,
+    memory::map::mmio::{GICC_START, GICD_START, GPIO_START, PL011_UART_START},
 };
-use crate::{console, driver as generic_driver};
+use crate::{
+    bsp::{drivers::gicv2::GICv2, execption::PL011_UART_IRQ},
+    console,
+    driver::DeviceDriverDescriptor,
+    driver::DRIVER_MANAGER,
+    exception::asynchronous::register_irq_manager,
+};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-pub static PL011_UART: PL011Uart = unsafe { PL011Uart::new(mmio::PL011_UART_START) };
-pub static GPIO: GPIO = unsafe { GPIO::new(mmio::GPIO_START) };
+pub static PL011_UART: PL011Uart = unsafe { PL011Uart::new(PL011_UART_START) };
+pub static GPIO: GPIO = unsafe { GPIO::new(GPIO_START) };
+static INTERRUPT_CONTROLLER: GICv2 = unsafe { GICv2::new(GICD_START, GICC_START) };
 
 /// This must be called only after successful init of the UART driver.
 fn post_init_uart() -> Result<(), &'static str> {
@@ -22,18 +27,12 @@ fn post_init_gpio() -> Result<(), &'static str> {
     Ok(())
 }
 
-fn register_driver_uart() -> Result<(), &'static str> {
-    let uart_descriptor =
-        generic_driver::DeviceDriverDescriptor::new(&PL011_UART, Some(post_init_uart));
-    generic_driver::driver_manager().register_driver(uart_descriptor);
+/// This must be called only after successful init of the interrupt controller driver.
+fn post_init_interrupt_controller() -> Result<(), &'static str> {
+    register_irq_manager(&INTERRUPT_CONTROLLER);
     Ok(())
 }
 
-fn register_driver_gpio() -> Result<(), &'static str> {
-    let gpio_descriptor = generic_driver::DeviceDriverDescriptor::new(&GPIO, Some(post_init_gpio));
-    generic_driver::driver_manager().register_driver(gpio_descriptor);
-    Ok(())
-}
 
 /// Initialize the driver subsystem.
 ///
@@ -46,8 +45,26 @@ pub unsafe fn init() -> Result<(), &'static str> {
         return Err("Init already done");
     }
 
-    register_driver_uart()?;
-    register_driver_gpio()?;
+    let uart_descriptor = DeviceDriverDescriptor {
+        device_driver: &PL011_UART,
+        post_init_callback: Some(post_init_uart),
+        irq_number: Some(PL011_UART_IRQ),
+    };
+    DRIVER_MANAGER.register_driver(uart_descriptor);
+
+    let gpio_descriptor = DeviceDriverDescriptor {
+        device_driver: &GPIO,
+        post_init_callback: Some(post_init_gpio),
+        irq_number: None,
+    };
+    DRIVER_MANAGER.register_driver(gpio_descriptor);
+
+    let interrupt_controller_descriptor = DeviceDriverDescriptor {
+        device_driver: &INTERRUPT_CONTROLLER,
+        post_init_callback: Some(post_init_interrupt_controller),
+        irq_number: None,
+    };
+    DRIVER_MANAGER.register_driver(interrupt_controller_descriptor);
 
     INIT_DONE.store(true, Ordering::Relaxed);
     Ok(())

@@ -46,6 +46,19 @@ pub mod map {
     #[cfg(feature = "kernelloader")]
     pub const BOARD_DEFAULT_LOAD_ADDRESS: usize =        0x8_0000;
 
+    /// The inclusive end address of the memory map.
+    ///
+    /// End address + 1 must be power of two.
+    ///
+    /// # Note
+    ///
+    /// RPi3 and RPi4 boards can have different amounts of RAM. To make our code lean for
+    /// educational purposes, we set the max size of the address space to 4 GiB regardless of board.
+    /// This way, we can map the entire range that we need (end of MMIO for RPi4) in one take.
+    ///
+    /// However, making this trade-off has the downside of making it possible for the CPU to assert a
+    /// physical address that is not backed by any DRAM (e.g. accessing an address close to 4 GiB on
+    /// an RPi3 that comes with 1 GiB of RAM). This would result in a crash or other kind of error.
     pub const END_INCLUSIVE:       usize = 0xFFFF_FFFF;
 
     pub const GPIO_OFFSET:         usize = 0x0020_0000;
@@ -58,6 +71,8 @@ pub mod map {
         pub const START:            usize =         0xFE00_0000;
         pub const GPIO_START:       usize = START + GPIO_OFFSET;
         pub const PL011_UART_START: usize = START + UART_OFFSET;
+        pub const GICD_START:       usize =         0xFF84_1000;
+        pub const GICC_START:       usize =         0xFF84_2000;
         pub const END_INCLUSIVE:    usize =         0xFF84_FFFF;
     }
 }
