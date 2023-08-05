@@ -10,12 +10,12 @@
 pub mod bsp;
 pub mod console;
 pub mod cpu;
-pub mod mmu;
 pub mod driver;
 pub mod exception;
+pub mod exception_level;
+pub mod mmu;
 pub mod panic;
 pub mod print;
-pub mod priv_level;
 pub mod state;
 pub mod synchronization;
 pub mod time;

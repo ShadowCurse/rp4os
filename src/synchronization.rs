@@ -1,5 +1,5 @@
 use crate::{
-    exception::asynchronous::exec_with_irq_masked, priv_level::is_local_irq_masked,
+    exception::asynchronous::exec_with_irq_masked, exception_level::is_local_irq_masked,
     state::state_manager,
 };
 use core::cell::UnsafeCell;

@@ -3,7 +3,7 @@ use aarch64_cpu::registers::*;
 use core::arch::asm;
 use tock_registers::interfaces::{Readable, Writeable};
 
-use crate::priv_level::PrivilegeLevel;
+use crate::exception_level::PrivilegeLevel;
 
 /// The processing element's current privilege level.
 pub fn current_privilege_level() -> (PrivilegeLevel, &'static str) {

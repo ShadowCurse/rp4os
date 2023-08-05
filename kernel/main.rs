@@ -33,7 +33,7 @@ unsafe fn kernel_init() -> ! {
     // println! is usable from here on.
 
     // Unmask interrupts on the boot CPU core.
-    priv_level::local_irq_unmask();
+    exception_level::local_irq_unmask();
 
     // Announce conclusion of the kernel_init() phase.
     state::state_manager().transition_to_single_core_main();
@@ -56,11 +56,11 @@ fn kernel_main() -> ! {
     info!("MMU online. Special regions:");
     bsp::memory::mmu::LAYOUT.print_layout();
 
-    let (_, privilege_level) = priv_level::current_privilege_level();
+    let (_, privilege_level) = exception_level::current_privilege_level();
     info!("Current privilege level: {}", privilege_level);
 
     info!("Exception handling state:");
-    priv_level::print_state();
+    exception_level::print_state();
 
     info!(
         "Architectural timer resolution: {} ns",

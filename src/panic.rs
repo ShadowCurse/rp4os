@@ -1,6 +1,6 @@
 use core::panic::PanicInfo;
 
-use crate::{cpu, println, priv_level::local_irq_mask, time::uptime};
+use crate::{cpu, exception_level::local_irq_mask, println, time::uptime};
 
 /// Stop immediately if called a second time.
 ///

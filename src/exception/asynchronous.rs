@@ -2,7 +2,7 @@
 // mod arch_asynchronous;
 
 use crate::exception::null_irq_manager::NULL_IRQ_MANAGER;
-use crate::priv_level::{local_irq_mask_save, local_irq_restore};
+use crate::exception_level::{local_irq_mask_save, local_irq_restore};
 use crate::synchronization;
 use core::marker::PhantomData;
 use synchronization::{interface::ReadWriteEx, InitStateLock};
