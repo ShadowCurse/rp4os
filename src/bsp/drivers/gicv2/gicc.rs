@@ -1,4 +1,8 @@
-use crate::{bsp::drivers::common::MMIODerefWrapper, exception::asynchronous::IRQContext};
+use crate::{
+    bsp::drivers::common::MMIODerefWrapper,
+    exception::asynchronous::IRQContext,
+    memory::{Address, Virtual},
+};
 use tock_registers::{
     interfaces::{Readable, Writeable},
     register_bitfields, register_structs,
@@ -55,7 +59,7 @@ impl GICC {
     /// # Safety
     ///
     /// - The user must ensure to provide a correct MMIO start address.
-    pub const unsafe fn new(mmio_start_addr: usize) -> Self {
+    pub const unsafe fn new(mmio_start_addr: Address<Virtual>) -> Self {
         Self {
             registers: Registers::new(mmio_start_addr),
         }

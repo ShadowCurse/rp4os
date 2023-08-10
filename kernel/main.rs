@@ -15,13 +15,18 @@ mod boot;
 /// - Only a single core must be active and running this function.
 /// - The init calls in this function must appear in the correct order.
 unsafe fn kernel_init() -> ! {
-    use rp4os::mmu::interface::MMU;
-
     exception::handling_init();
 
-    if let Err(string) = mmu::mmu().enable_mmu_and_caching() {
-        panic!("MMU: {}", string);
+    let phys_kernel_tables_base_addr = match memory::mmu::kernel_map_binary() {
+        Err(string) => panic!("Error mapping kernel binary: {}", string),
+        Ok(addr) => addr,
+    };
+
+    if let Err(e) = memory::mmu::enable_mmu_and_caching(phys_kernel_tables_base_addr) {
+        panic!("Enabling MMU failed: {}", e);
     }
+
+    memory::mmu::post_enable_init();
 
     // Initialize the BSP driver subsystem.
     if let Err(x) = bsp::driver::init() {
@@ -44,8 +49,6 @@ unsafe fn kernel_init() -> ! {
 
 /// The main function running after the early init.
 fn kernel_main() -> ! {
-    use console::console;
-
     info!(
         "[0] {} version {}",
         env!("CARGO_PKG_NAME"),
@@ -53,8 +56,8 @@ fn kernel_main() -> ! {
     );
     info!("[1] Booting on: {}", bsp::board_name());
 
-    info!("MMU online. Special regions:");
-    bsp::memory::mmu::LAYOUT.print_layout();
+    info!("MMU online:");
+    memory::mmu::kernel_print_mappings();
 
     let (_, privilege_level) = exception_level::current_privilege_level();
     info!("Current privilege level: {}", privilege_level);
@@ -69,18 +72,6 @@ fn kernel_main() -> ! {
 
     info!("[2] Drivers loaded:");
     driver::DRIVER_MANAGER.enumerate();
-
-    {
-        use rp4os::console::interface::Write;
-        let remapped_uart = unsafe { bsp::drivers::bcm2xxx_pl011::PL011Uart::new(0x1FFF_1000) };
-        writeln!(
-            remapped_uart,
-            "[     !!!    ] Writing through the remapped UART at 0x1FFF_1000"
-        )
-        .unwrap();
-    }
-
-    info!("[3] Chars written: {}", console().chars_written());
 
     info!("Registered IRQ handlers:");
     exception::asynchronous::irq_manager().print_handler();

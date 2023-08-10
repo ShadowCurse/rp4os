@@ -84,6 +84,7 @@ use crate::{
     cpu::smp::core_id,
     driver::interface::DeviceDriver,
     exception::asynchronous::{interface::IRQManager, IRQContext, IRQHandlerDescriptor},
+    memory::{Address, Virtual},
     synchronization,
     synchronization::InitStateLock,
 };
@@ -116,7 +117,10 @@ impl GICv2 {
     /// # Safety
     ///
     /// - The user must ensure to provide a correct MMIO start address.
-    pub const unsafe fn new(gicd_mmio_start_addr: usize, gicc_mmio_start_addr: usize) -> Self {
+    pub const unsafe fn new(
+        gicd_mmio_start_addr: Address<Virtual>,
+        gicc_mmio_start_addr: Address<Virtual>,
+    ) -> Self {
         Self {
             gicd: GICD::new(gicd_mmio_start_addr),
             gicc: GICC::new(gicc_mmio_start_addr),

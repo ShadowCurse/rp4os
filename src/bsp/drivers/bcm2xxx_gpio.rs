@@ -1,6 +1,7 @@
 use crate::{
     bsp::drivers::common::MMIODerefWrapper,
     driver,
+    memory::{Address, Virtual},
     synchronization::{interface::Mutex, IRQSafeNullLock},
 };
 use tock_registers::{
@@ -111,7 +112,7 @@ impl GPIOInner {
     /// # Safety
     ///
     /// - The user must ensure to provide a correct MMIO start address.
-    pub const unsafe fn new(mmio_start_addr: usize) -> Self {
+    pub const unsafe fn new(mmio_start_addr: Address<Virtual>) -> Self {
         Self {
             registers: Registers::new(mmio_start_addr),
         }
@@ -153,7 +154,7 @@ impl GPIO {
     /// # Safety
     ///
     /// - The user must ensure to provide a correct MMIO start address.
-    pub const unsafe fn new(mmio_start_addr: usize) -> Self {
+    pub const unsafe fn new(mmio_start_addr: Address<Virtual>) -> Self {
         Self {
             inner: IRQSafeNullLock::new(GPIOInner::new(mmio_start_addr)),
         }

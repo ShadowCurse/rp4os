@@ -1,68 +1,131 @@
 //! BSP Memory Management Unit.
 
-use crate::bsp::memory::{code_end_exclusive, code_start, map};
-use crate::mmu::{
-    AccessPermissions, AddressSpace, AttributeFields, KernelVirtualLayout, MemAttributes,
-    Translation, TranslationDescriptor,
+use crate::memory::mmu::{
+    kernel_map_at, AssociatedTranslationTable, MemoryRegion, PageAddress, TranslationGranule,
 };
-use core::ops::RangeInclusive;
+use crate::memory::mmu::{AccessPermissions, AddressSpace, AttributeFields, MemAttributes};
+use crate::memory::{Physical, Virtual};
+use crate::synchronization::InitStateLock;
 
-const NUM_MEM_RANGES: usize = 3;
+/// The translation granule chosen by this BSP. This will be used everywhere else in the kernel to
+/// derive respective data structures and their sizes. For example, the `crate::memory::mmu::Page`.
+pub type KernelGranule = TranslationGranule<{ 64 * 1024 }>;
 
-/// The kernel's address space defined by this BSP.
-pub type KernelAddrSpace = AddressSpace<{ map::END_INCLUSIVE + 1 }>;
+/// The kernel's virtual address space defined by this BSP.
+pub type KernelVirtAddrSpace = AddressSpace<{ 1024 * 1024 * 1024 }>;
 
-/// The virtual memory layout.
+type KernelTranslationTable =
+    <KernelVirtAddrSpace as AssociatedTranslationTable>::TableStartFromBottom;
+
+/// The kernel translation tables.
 ///
-/// The layout must contain only special ranges, aka anything that is _not_ normal cacheable DRAM.
-/// It is agnostic of the paging granularity that the architecture's MMU will use.
-pub static LAYOUT: KernelVirtualLayout<NUM_MEM_RANGES> = KernelVirtualLayout::new(
-    map::END_INCLUSIVE,
-    [
-        TranslationDescriptor {
-            name: "Kernel code and RO data",
-            virtual_range: code_range_inclusive,
-            physical_range_translation: Translation::Identity,
-            attribute_fields: AttributeFields {
-                mem_attributes: MemAttributes::CacheableDRAM,
-                acc_perms: AccessPermissions::ReadOnly,
-                execute_never: false,
-            },
-        },
-        TranslationDescriptor {
-            name: "Remapped Device MMIO",
-            virtual_range: remapped_mmio_range_inclusive,
-            physical_range_translation: Translation::Offset(map::mmio::START + 0x20_0000),
-            attribute_fields: AttributeFields {
-                mem_attributes: MemAttributes::Device,
-                acc_perms: AccessPermissions::ReadWrite,
-                execute_never: true,
-            },
-        },
-        TranslationDescriptor {
-            name: "Device MMIO",
-            virtual_range: mmio_range_inclusive,
-            physical_range_translation: Translation::Identity,
-            attribute_fields: AttributeFields {
-                mem_attributes: MemAttributes::Device,
-                acc_perms: AccessPermissions::ReadWrite,
-                execute_never: true,
-            },
-        },
-    ],
-);
+/// It is mandatory that InitStateLock is transparent.
+///
+/// That is, `size_of(InitStateLock<KernelTranslationTable>) == size_of(KernelTranslationTable)`.
+/// There is a unit tests that checks this porperty.
+pub static KERNEL_TRANSLATION_TABLES: InitStateLock<KernelTranslationTable> =
+    InitStateLock::new(KernelTranslationTable::new());
 
-fn code_range_inclusive() -> RangeInclusive<usize> {
-    // Notice the subtraction to turn the exclusive end into an inclusive end.
-    #[allow(clippy::range_minus_one)]
-    RangeInclusive::new(code_start(), code_end_exclusive() - 1)
+/// Helper function for calculating the number of pages the given parameter spans.
+const fn size_to_num_pages(size: usize) -> usize {
+    assert!(size > 0);
+    assert!(size % KernelGranule::SIZE == 0);
+
+    size >> KernelGranule::SHIFT
 }
 
-fn remapped_mmio_range_inclusive() -> RangeInclusive<usize> {
-    // The last 64 KiB slot in the first 512 MiB
-    RangeInclusive::new(0x1FFF_0000, 0x1FFF_FFFF)
+/// The code pages of the kernel binary.
+fn virt_code_region() -> MemoryRegion<Virtual> {
+    let num_pages = size_to_num_pages(super::code_size());
+
+    let start_page_addr = super::virt_code_start();
+    let end_exclusive_page_addr = start_page_addr.checked_offset(num_pages as isize).unwrap();
+
+    MemoryRegion::new(start_page_addr, end_exclusive_page_addr)
 }
 
-fn mmio_range_inclusive() -> RangeInclusive<usize> {
-    RangeInclusive::new(map::mmio::START, map::mmio::END_INCLUSIVE)
+/// The data pages of the kernel binary.
+fn virt_data_region() -> MemoryRegion<Virtual> {
+    let num_pages = size_to_num_pages(super::data_size());
+
+    let start_page_addr = super::virt_data_start();
+    let end_exclusive_page_addr = start_page_addr.checked_offset(num_pages as isize).unwrap();
+
+    MemoryRegion::new(start_page_addr, end_exclusive_page_addr)
+}
+
+/// The boot core stack pages.
+fn virt_boot_core_stack_region() -> MemoryRegion<Virtual> {
+    let num_pages = size_to_num_pages(super::boot_core_stack_size());
+
+    let start_page_addr = super::virt_boot_core_stack_start();
+    let end_exclusive_page_addr = start_page_addr.checked_offset(num_pages as isize).unwrap();
+
+    MemoryRegion::new(start_page_addr, end_exclusive_page_addr)
+}
+
+// The binary is still identity mapped, so use this trivial conversion function for mapping below.
+
+fn kernel_virt_to_phys_region(virt_region: MemoryRegion<Virtual>) -> MemoryRegion<Physical> {
+    MemoryRegion::new(
+        PageAddress::from(virt_region.start_page_addr().into_inner().as_usize()),
+        PageAddress::from(
+            virt_region
+                .end_exclusive_page_addr()
+                .into_inner()
+                .as_usize(),
+        ),
+    )
+}
+
+/// The MMIO remap pages.
+pub fn virt_mmio_remap_region() -> MemoryRegion<Virtual> {
+    let num_pages = size_to_num_pages(super::mmio_remap_size());
+
+    let start_page_addr = super::virt_mmio_remap_start();
+    let end_exclusive_page_addr = start_page_addr.checked_offset(num_pages as isize).unwrap();
+
+    MemoryRegion::new(start_page_addr, end_exclusive_page_addr)
+}
+
+/// Map the kernel binary.
+///
+/// # Safety
+///
+/// - Any miscalculation or attribute error will likely be fatal. Needs careful manual checking.
+pub unsafe fn kernel_map_binary() -> Result<(), &'static str> {
+    kernel_map_at(
+        "Kernel boot-core stack",
+        &virt_boot_core_stack_region(),
+        &kernel_virt_to_phys_region(virt_boot_core_stack_region()),
+        &AttributeFields {
+            mem_attributes: MemAttributes::CacheableDRAM,
+            acc_perms: AccessPermissions::ReadWrite,
+            execute_never: true,
+        },
+    )?;
+
+    kernel_map_at(
+        "Kernel code and RO data",
+        &virt_code_region(),
+        &kernel_virt_to_phys_region(virt_code_region()),
+        &AttributeFields {
+            mem_attributes: MemAttributes::CacheableDRAM,
+            acc_perms: AccessPermissions::ReadOnly,
+            execute_never: false,
+        },
+    )?;
+
+    kernel_map_at(
+        "Kernel data and bss",
+        &virt_data_region(),
+        &kernel_virt_to_phys_region(virt_data_region()),
+        &AttributeFields {
+            mem_attributes: MemAttributes::CacheableDRAM,
+            acc_perms: AccessPermissions::ReadWrite,
+            execute_never: true,
+        },
+    )?;
+
+    Ok(())
 }

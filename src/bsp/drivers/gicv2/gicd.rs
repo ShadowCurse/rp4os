@@ -1,6 +1,6 @@
 use crate::{
     bsp::drivers::common::MMIODerefWrapper, state, synchronization,
-    synchronization::IRQSafeNullLock,
+    synchronization::IRQSafeNullLock, memory::{Virtual, Address},
 };
 use synchronization::interface::Mutex;
 use tock_registers::{
@@ -104,7 +104,7 @@ impl GICD {
     /// # Safety
     ///
     /// - The user must ensure to provide a correct MMIO start address.
-    pub const unsafe fn new(mmio_start_addr: usize) -> Self {
+    pub const unsafe fn new(mmio_start_addr: Address<Virtual>) -> Self {
         Self {
             shared_registers: IRQSafeNullLock::new(SharedRegisters::new(mmio_start_addr)),
             banked_registers: BankedRegisters::new(mmio_start_addr),

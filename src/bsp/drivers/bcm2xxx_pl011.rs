@@ -6,6 +6,7 @@ use crate::{
     cpu,
     driver::interface::DeviceDriver,
     exception::asynchronous::{interface::IRQHandler, irq_manager, IRQHandlerDescriptor},
+    memory::{Address, Virtual},
     synchronization::{interface::Mutex, IRQSafeNullLock},
 };
 use tock_registers::{
@@ -220,7 +221,7 @@ impl PL011UartInner {
     /// # Safety
     ///
     /// - The user must ensure to provide a correct MMIO start address.
-    pub const unsafe fn new(mmio_start_addr: usize) -> Self {
+    pub const unsafe fn new(mmio_start_addr: Address<Virtual>) -> Self {
         Self {
             registers: Registers::new(mmio_start_addr),
             chars_written: 0,
@@ -370,7 +371,7 @@ impl PL011Uart {
     /// # Safety
     ///
     /// - The user must ensure to provide a correct MMIO start address.
-    pub const unsafe fn new(mmio_start_addr: usize) -> Self {
+    pub const unsafe fn new(mmio_start_addr: Address<Virtual>) -> Self {
         Self {
             inner: IRQSafeNullLock::new(PL011UartInner::new(mmio_start_addr)),
         }
