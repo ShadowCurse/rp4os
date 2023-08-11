@@ -3,15 +3,15 @@ use super::{
     Physical, Virtual,
 };
 use crate::{
-    bsp, info, size_human_readable_ceil, synchronization, synchronization::InitStateLock, warn,
+    bsp::memory::mmu::KernelGranule, info, size_human_readable_ceil, synchronization,
+    synchronization::InitStateLock, warn,
 };
 use synchronization::interface::ReadWriteEx;
 
-static KERNEL_MAPPING_RECORD: InitStateLock<MappingRecord> =
-    InitStateLock::new(MappingRecord::new());
+static KERNEL_MAPPING_RECORDS: InitStateLock<MappingRecords> =
+    InitStateLock::new(MappingRecords::new());
 
 /// Type describing a virtual memory mapping.
-#[allow(missing_docs)]
 #[derive(Copy, Clone)]
 struct MappingRecordEntry {
     pub users: [Option<&'static str>; 5],
@@ -21,7 +21,7 @@ struct MappingRecordEntry {
     pub attribute_fields: AttributeFields,
 }
 
-struct MappingRecord {
+struct MappingRecords {
     inner: [Option<MappingRecordEntry>; 12],
 }
 
@@ -56,7 +56,7 @@ impl MappingRecordEntry {
     }
 }
 
-impl MappingRecord {
+impl MappingRecords {
     pub const fn new() -> Self {
         Self { inner: [None; 12] }
     }
@@ -82,7 +82,7 @@ impl MappingRecord {
         Err("Storage for mapping info exhausted")
     }
 
-    fn find_duplicate(
+    fn find_device_record(
         &mut self,
         phys_region: &MemoryRegion<Physical>,
     ) -> Option<&mut MappingRecordEntry> {
@@ -133,7 +133,7 @@ impl MappingRecord {
         info!("      -------------------------------------------------------------------------------------------------------------------------------------------");
 
         for i in self.inner.iter().flatten() {
-            let size = i.num_pages * bsp::memory::mmu::KernelGranule::SIZE;
+            let size = i.num_pages * KernelGranule::SIZE;
             let virt_start = i.virt_start_addr;
             let virt_end_inclusive = virt_start + (size - 1);
             let phys_start = i.phys_start_addr;
@@ -142,8 +142,8 @@ impl MappingRecord {
             let (size, unit) = size_human_readable_ceil(size);
 
             let attr = match i.attribute_fields.mem_attributes {
-                MemAttributes::CacheableDRAM => "C",
-                MemAttributes::Device => "Dev",
+                MemAttributes::CacheableDRAM => "Cache",
+                MemAttributes::Device => "Device",
             };
 
             let acc_p = match i.attribute_fields.acc_perms {
@@ -186,33 +186,34 @@ impl MappingRecord {
 }
 
 /// Add an entry to the mapping info record.
-pub fn kernel_add(
+pub fn kernel_add_mapping_record(
     name: &'static str,
     virt_region: &MemoryRegion<Virtual>,
     phys_region: &MemoryRegion<Physical>,
     attr: &AttributeFields,
 ) -> Result<(), &'static str> {
-    KERNEL_MAPPING_RECORD.write(|mr| mr.add(name, virt_region, phys_region, attr))
+    KERNEL_MAPPING_RECORDS.write(|mr| mr.add(name, virt_region, phys_region, attr))
 }
 
-pub fn kernel_find_and_insert_mmio_duplicate(
-    mmio_descriptor: &MMIODescriptor,
+/// Tries to add device as a user to the existing record.
+pub fn kernel_try_add_device_record_mmio_user(
     new_user: &'static str,
+    mmio_descriptor: &MMIODescriptor,
 ) -> Option<Address<Virtual>> {
     let phys_region: MemoryRegion<Physical> = (*mmio_descriptor).into();
 
-    KERNEL_MAPPING_RECORD.write(|mr| {
-        let dup = mr.find_duplicate(&phys_region)?;
+    KERNEL_MAPPING_RECORDS.write(|records| {
+        let record = records.find_device_record(&phys_region)?;
 
-        if let Err(x) = dup.add_user(new_user) {
+        if let Err(x) = record.add_user(new_user) {
             warn!("{}", x);
         }
 
-        Some(dup.virt_start_addr)
+        Some(record.virt_start_addr)
     })
 }
 
 /// Human-readable print of all recorded kernel mappings.
 pub fn kernel_print() {
-    KERNEL_MAPPING_RECORD.read(|mr| mr.print());
+    KERNEL_MAPPING_RECORDS.read(|mr| mr.print());
 }

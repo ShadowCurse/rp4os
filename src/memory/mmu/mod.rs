@@ -13,6 +13,7 @@ mod page_alloc;
 mod translation_table;
 
 pub use arch_mmu::*;
+
 use core::{
     fmt::{Debug, Display},
     iter::Step,
@@ -21,12 +22,17 @@ use core::{
 };
 
 use crate::{
+    bsp::memory::mmu::{virt_mmio_remap_region, KernelGranule, KERNEL_TRANSLATION_TABLES},
     is_aligned,
     synchronization::interface::{Mutex, ReadWriteEx},
     warn,
 };
 
-use self::{interface::MMU, translation_table::interface::TranslationTable};
+use self::{
+    interface::MMU,
+    mapping_record::{kernel_add_mapping_record, kernel_try_add_device_record_mmio_user},
+    translation_table::interface::TranslationTable,
+};
 
 use super::{Address, AddressType, Physical, Virtual};
 
@@ -136,9 +142,8 @@ unsafe fn kernel_map_at_unchecked(
     phys_region: &MemoryRegion<Physical>,
     attr: &AttributeFields,
 ) -> Result<(), &'static str> {
-    crate::bsp::memory::mmu::KERNEL_TRANSLATION_TABLES
-        .write(|tables| tables.map_at(virt_region, phys_region, attr))?;
-    if let Err(x) = mapping_record::kernel_add(name, virt_region, phys_region, attr) {
+    KERNEL_TRANSLATION_TABLES.write(|tables| tables.map_at(virt_region, phys_region, attr))?;
+    if let Err(x) = kernel_add_mapping_record(name, virt_region, phys_region, attr) {
         warn!("{}", x);
     }
     Ok(())
@@ -158,7 +163,7 @@ pub unsafe fn kernel_map_at(
     phys_region: &MemoryRegion<Physical>,
     attr: &AttributeFields,
 ) -> Result<(), &'static str> {
-    if crate::bsp::memory::mmu::virt_mmio_remap_region().overlaps(virt_region) {
+    if virt_mmio_remap_region().overlaps(virt_region) {
         return Err("Attempt to manually map into MMIO region");
     }
 
@@ -182,33 +187,32 @@ pub unsafe fn kernel_map_mmio(
     let offset_into_start_page = mmio_descriptor.start_addr().offset_into_page();
 
     // Check if an identical region has been mapped for another driver. If so, reuse it.
-    let virt_addr = if let Some(addr) =
-        mapping_record::kernel_find_and_insert_mmio_duplicate(mmio_descriptor, name)
-    {
-        addr
-    // Otherwise, allocate a new region and map it.
-    } else {
-        let num_pages = match NonZeroUsize::new(phys_region.num_pages()) {
-            None => return Err("Requested 0 pages"),
-            Some(x) => x,
+    let virt_addr =
+        if let Some(addr) = kernel_try_add_device_record_mmio_user(name, mmio_descriptor) {
+            addr
+        // Otherwise, allocate a new region and map it.
+        } else {
+            let num_pages = match NonZeroUsize::new(phys_region.num_pages()) {
+                None => return Err("Requested 0 pages"),
+                Some(x) => x,
+            };
+
+            let virt_region = page_alloc::KERNEL_MMIO_VA_ALLOCATOR
+                .lock(|allocator| allocator.alloc(num_pages))?;
+
+            kernel_map_at_unchecked(
+                name,
+                &virt_region,
+                &phys_region,
+                &AttributeFields {
+                    mem_attributes: MemAttributes::Device,
+                    acc_perms: AccessPermissions::ReadWrite,
+                    execute_never: true,
+                },
+            )?;
+
+            virt_region.start_addr()
         };
-
-        let virt_region =
-            page_alloc::KERNEL_MMIO_VA_ALLOCATOR.lock(|allocator| allocator.alloc(num_pages))?;
-
-        kernel_map_at_unchecked(
-            name,
-            &virt_region,
-            &phys_region,
-            &AttributeFields {
-                mem_attributes: MemAttributes::Device,
-                acc_perms: AccessPermissions::ReadWrite,
-                execute_never: true,
-            },
-        )?;
-
-        virt_region.start_addr()
-    };
 
     Ok(virt_addr + offset_into_start_page)
 }
@@ -219,11 +223,10 @@ pub unsafe fn kernel_map_mmio(
 ///
 /// - See [`bsp::memory::mmu::kernel_map_binary()`].
 pub unsafe fn kernel_map_binary() -> Result<Address<Physical>, &'static str> {
-    let phys_kernel_tables_base_addr =
-        crate::bsp::memory::mmu::KERNEL_TRANSLATION_TABLES.write(|tables| {
-            tables.init();
-            tables.phys_base_address()
-        });
+    let phys_kernel_tables_base_addr = KERNEL_TRANSLATION_TABLES.write(|tables| {
+        tables.init();
+        tables.phys_base_address()
+    });
 
     crate::bsp::memory::mmu::kernel_map_binary()?;
 
@@ -297,9 +300,7 @@ impl<ATYPE: AddressType> PageAddress<ATYPE> {
             return Some(self);
         }
 
-        let delta = count
-            .unsigned_abs()
-            .checked_mul(crate::bsp::memory::mmu::KernelGranule::SIZE)?;
+        let delta = count.unsigned_abs().checked_mul(KernelGranule::SIZE)?;
         let result = if count.is_positive() {
             self.inner.as_usize().checked_add(delta)?
         } else {
@@ -315,7 +316,7 @@ impl<ATYPE: AddressType> PageAddress<ATYPE> {
 impl<ATYPE: AddressType> From<usize> for PageAddress<ATYPE> {
     fn from(addr: usize) -> Self {
         assert!(
-            is_aligned(addr, crate::bsp::memory::mmu::KernelGranule::SIZE),
+            is_aligned(addr, KernelGranule::SIZE),
             "Input usize not page aligned"
         );
 
@@ -340,10 +341,7 @@ impl<ATYPE: AddressType> Step for PageAddress<ATYPE> {
         }
 
         // Since start <= end, do unchecked arithmetic.
-        Some(
-            (end.inner.as_usize() - start.inner.as_usize())
-                >> crate::bsp::memory::mmu::KernelGranule::SHIFT,
-        )
+        Some((end.inner.as_usize() - start.inner.as_usize()) >> KernelGranule::SHIFT)
     }
 
     fn forward_checked(start: Self, count: usize) -> Option<Self> {
