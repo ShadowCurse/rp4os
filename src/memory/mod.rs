@@ -7,6 +7,11 @@ use core::{
     ops::{Add, Sub},
 };
 
+/// Initialize the memory subsystem.
+pub fn init() {
+    mmu::kernel_init_mmio_va_allocator();
+}
+
 /// Metadata trait for marking the type of an address.
 pub trait AddressType: Copy + Clone + PartialOrd + PartialEq + Ord + Eq {}
 

@@ -1,3 +1,5 @@
+INCLUDE ../src/bsp/kernel_virt_addr_space_size.ld;
+
 PAGE_SIZE = 64K;
 PAGE_MASK = PAGE_SIZE - 1;
 
