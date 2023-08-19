@@ -17,7 +17,16 @@ mod boot;
 unsafe fn kernel_init() -> ! {
     exception::handling_init();
 
-    memory::init();
+    let phys_kernel_tables_base_addr = match memory::mmu::kernel_map_binary() {
+        Err(string) => panic!("Error mapping kernel binary: {}", string),
+        Ok(addr) => addr,
+    };
+
+    if let Err(e) = memory::mmu::enable_mmu_and_caching(phys_kernel_tables_base_addr) {
+        panic!("Enabling MMU failed: {}", e);
+    }
+
+    memory::mmu::post_enable_init();
 
     // Initialize the BSP driver subsystem.
     if let Err(x) = bsp::driver::init() {
@@ -27,8 +36,6 @@ unsafe fn kernel_init() -> ! {
     // Initialize all device drivers.
     driver::DRIVER_MANAGER.init_drivers_and_irqs();
     // println! is usable from here on.
-    
-    bsp::memory::mmu::kernel_add_mapping_records_for_precomputed();
 
     // Unmask interrupts on the boot CPU core.
     exception_level::local_irq_unmask();
