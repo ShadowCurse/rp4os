@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.3.21", features = ["derive"] }
 elf = "0.7.2"
+tock-registers = "0.8.1"
