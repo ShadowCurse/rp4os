@@ -1,4 +1,5 @@
 #![feature(generic_const_exprs)]
+#![feature(alloc_error_handler)]
 #![feature(panic_info_message)]
 #![feature(unchecked_math)]
 #![feature(format_args_nl)]
@@ -9,6 +10,8 @@
 #![feature(asm_const)]
 #![no_main]
 #![no_std]
+
+extern crate alloc;
 
 pub mod bsp;
 pub mod console;

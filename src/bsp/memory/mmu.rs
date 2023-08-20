@@ -1,10 +1,13 @@
 //! BSP Memory Management Unit.
 
+use crate::memory::mmu::mapping_record::kernel_add_mapping_record;
+use crate::memory::mmu::translation_table::interface::TranslationTable;
 use crate::memory::mmu::{
     kernel_map_at, AssociatedTranslationTable, MemoryRegion, PageAddress, TranslationGranule,
 };
 use crate::memory::mmu::{AccessPermissions, AddressSpace, AttributeFields, MemAttributes};
 use crate::memory::{Physical, Virtual};
+use crate::synchronization::interface::ReadWriteEx;
 use crate::synchronization::InitStateLock;
 
 /// The translation granule chosen by this BSP. This will be used everywhere else in the kernel to
@@ -32,6 +35,16 @@ const fn size_to_num_pages(size: usize) -> usize {
     assert!(size % KernelGranule::SIZE == 0);
 
     size >> KernelGranule::SHIFT
+}
+
+/// The heap pages.
+pub fn virt_heap_region() -> MemoryRegion<Virtual> {
+    let num_pages = size_to_num_pages(super::heap_size());
+
+    let start_page_addr = super::virt_heap_start();
+    let end_exclusive_page_addr = start_page_addr.checked_offset(num_pages as isize).unwrap();
+
+    MemoryRegion::new(start_page_addr, end_exclusive_page_addr)
 }
 
 /// The code pages of the kernel binary.
@@ -62,6 +75,15 @@ fn virt_boot_core_stack_region() -> MemoryRegion<Virtual> {
     let end_exclusive_page_addr = start_page_addr.checked_offset(num_pages as isize).unwrap();
 
     MemoryRegion::new(start_page_addr, end_exclusive_page_addr)
+}
+
+/// Try to get the attributes of a kernel page.
+///
+/// Will only succeed if there exists a valid mapping for the input page.
+pub fn kernel_page_attributes(
+    virt_page_addr: PageAddress<Virtual>,
+) -> Result<AttributeFields, &'static str> {
+    KERNEL_TRANSLATION_TABLES.read(|tables| tables.try_page_attributes(virt_page_addr))
 }
 
 // The binary is still identity mapped, so use this trivial conversion function for mapping below.
@@ -98,6 +120,17 @@ pub unsafe fn kernel_map_binary() -> Result<(), &'static str> {
         "Kernel boot-core stack",
         &virt_boot_core_stack_region(),
         &kernel_virt_to_phys_region(virt_boot_core_stack_region()),
+        &AttributeFields {
+            mem_attributes: MemAttributes::CacheableDRAM,
+            acc_perms: AccessPermissions::ReadWrite,
+            execute_never: true,
+        },
+    )?;
+
+    kernel_map_at(
+        "Kernel heap",
+        &virt_heap_region(),
+        &kernel_virt_to_phys_region(virt_heap_region()),
         &AttributeFields {
             mem_attributes: MemAttributes::CacheableDRAM,
             acc_perms: AccessPermissions::ReadWrite,

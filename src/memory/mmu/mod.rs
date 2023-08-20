@@ -7,10 +7,10 @@
 //! install respective translation tables.
 
 #[path = "../../arch/aarch64/mmu/mod.rs"]
-mod arch_mmu;
-mod mapping_record;
-mod page_alloc;
-mod translation_table;
+pub mod arch_mmu;
+pub mod mapping_record;
+pub mod page_alloc;
+pub mod translation_table;
 
 pub use arch_mmu::*;
 
@@ -122,7 +122,7 @@ pub trait AssociatedTranslationTable {
 
 /// Query the BSP for the reserved virtual addresses for MMIO remapping and initialize the kernel's
 /// MMIO VA allocator with it.
-fn kernel_init_mmio_va_allocator() {
+pub fn kernel_init_mmio_va_allocator() {
     let region = crate::bsp::memory::mmu::virt_mmio_remap_region();
 
     page_alloc::KERNEL_MMIO_VA_ALLOCATOR.lock(|allocator| allocator.init(region));
@@ -242,11 +242,6 @@ pub unsafe fn enable_mmu_and_caching(
     phys_tables_base_addr: Address<Physical>,
 ) -> Result<(), MMUEnableError> {
     arch_mmu::MMU.enable_mmu_and_caching(phys_tables_base_addr)
-}
-
-/// Finish initialization of the MMU subsystem.
-pub fn post_enable_init() {
-    kernel_init_mmio_va_allocator();
 }
 
 /// Human-readable print of all recorded kernel mappings.

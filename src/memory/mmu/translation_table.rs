@@ -10,6 +10,8 @@ pub use arch_translation_table::*;
 
 /// Translation table interfaces.
 pub mod interface {
+    use crate::memory::mmu::PageAddress;
+
     use super::*;
 
     /// Translation table operations.
@@ -40,5 +42,13 @@ pub mod interface {
             phys_region: &MemoryRegion<Physical>,
             attr: &AttributeFields,
         ) -> Result<(), &'static str>;
+
+        /// Try to get the attributes of a page.
+        ///
+        /// Will only succeed if there exists a valid mapping for the input page.
+        fn try_page_attributes(
+            &self,
+            virt_page_addr: PageAddress<Virtual>,
+        ) -> Result<AttributeFields, &'static str>;
     }
 }

@@ -4,6 +4,9 @@
 #![no_main]
 #![no_std]
 
+extern crate alloc;
+
+use alloc::vec;
 use rp4os::*;
 
 mod boot;
@@ -26,7 +29,7 @@ unsafe fn kernel_init() -> ! {
         panic!("Enabling MMU failed: {}", e);
     }
 
-    memory::mmu::post_enable_init();
+    memory::post_enable_init();
 
     // Initialize the BSP driver subsystem.
     if let Err(x) = bsp::driver::init() {
@@ -75,6 +78,19 @@ fn kernel_main() -> ! {
 
     info!("Registered IRQ handlers:");
     exception::asynchronous::irq_manager().print_handler();
+
+    info!("Kernel heap:");
+    memory::heap_alloc::kernel_heap_allocator().print_usage();
+
+    {
+        let _numbers = vec![1, 2, 3, 4];
+
+        info!("Kernel heap:");
+        memory::heap_alloc::kernel_heap_allocator().print_usage();
+    }
+
+    info!("Kernel heap:");
+    memory::heap_alloc::kernel_heap_allocator().print_usage();
 
     info!("Echoing input now");
     cpu::wait_forever();

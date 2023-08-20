@@ -1,3 +1,4 @@
+pub mod heap_alloc;
 pub mod mmu;
 
 use crate::{align_down, align_up, bsp, is_aligned};
@@ -6,6 +7,14 @@ use core::{
     marker::PhantomData,
     ops::{Add, Sub},
 };
+
+use self::{heap_alloc::kernel_init_heap_allocator, mmu::kernel_init_mmio_va_allocator};
+
+/// Finish initialization of the MMU subsystem.
+pub fn post_enable_init() {
+    kernel_init_mmio_va_allocator();
+    kernel_init_heap_allocator();
+}
 
 /// Metadata trait for marking the type of an address.
 pub trait AddressType: Copy + Clone + PartialOrd + PartialEq + Ord + Eq {}

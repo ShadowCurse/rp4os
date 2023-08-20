@@ -154,6 +154,18 @@ impl<const NUM_TABLES: usize> FixedSizeTranslationTable<NUM_TABLES> {
         *desc = *new_desc;
         Ok(())
     }
+
+    /// Returns the PageDescriptor corresponding to the supplied page address.
+    #[inline(always)]
+    fn page_descriptor_from_page_addr(
+        &self,
+        virt_page_addr: PageAddress<Virtual>,
+    ) -> Result<&PageDescriptor, &'static str> {
+        let (lvl2_index, lvl3_index) = self.lvl2_lvl3_index_from_page_addr(virt_page_addr)?;
+        let desc = &self.lvl3[lvl2_index][lvl3_index];
+
+        Ok(desc)
+    }
 }
 
 impl<const NUM_TABLES: usize> crate::memory::mmu::translation_table::interface::TranslationTable
@@ -206,6 +218,19 @@ impl<const NUM_TABLES: usize> crate::memory::mmu::translation_table::interface::
         }
 
         Ok(())
+    }
+
+    fn try_page_attributes(
+        &self,
+        virt_page_addr: PageAddress<Virtual>,
+    ) -> Result<AttributeFields, &'static str> {
+        let page_desc = self.page_descriptor_from_page_addr(virt_page_addr)?;
+
+        if !page_desc.is_valid() {
+            return Err("Page marked invalid");
+        }
+
+        page_desc.try_attributes()
     }
 }
 
@@ -278,7 +303,7 @@ impl PageDescriptor {
 
         let shifted = phys_output_addr.into_inner().as_usize() as u64 >> Granule64KiB::SHIFT;
         val.write(
-            STAGE1_PAGE_DESCRIPTOR::OUTPUT_ADDR_64KiB.val(shifted as u64)
+            STAGE1_PAGE_DESCRIPTOR::OUTPUT_ADDR_64KiB.val(shifted)
                 + STAGE1_PAGE_DESCRIPTOR::AF::True
                 + STAGE1_PAGE_DESCRIPTOR::TYPE::Page
                 + STAGE1_PAGE_DESCRIPTOR::VALID::True
@@ -293,6 +318,11 @@ impl PageDescriptor {
         InMemoryRegister::<u64, STAGE1_PAGE_DESCRIPTOR::Register>::new(self.value)
             .is_set(STAGE1_PAGE_DESCRIPTOR::VALID)
     }
+
+    /// Returns the attributes.
+    fn try_attributes(&self) -> Result<AttributeFields, &'static str> {
+        InMemoryRegister::<u64, STAGE1_PAGE_DESCRIPTOR::Register>::new(self.value).try_into()
+    }
 }
 
 impl<const AS_SIZE: usize> crate::memory::mmu::AssociatedTranslationTable
@@ -301,6 +331,35 @@ where
     [u8; Self::SIZE >> Granule512MiB::SHIFT]: Sized,
 {
     type TableStartFromBottom = FixedSizeTranslationTable<{ Self::SIZE >> Granule512MiB::SHIFT }>;
+}
+
+/// Convert the HW-specific attributes of the MMU to kernel's generic memory attributes.
+impl TryFrom<InMemoryRegister<u64, STAGE1_PAGE_DESCRIPTOR::Register>> for AttributeFields {
+    type Error = &'static str;
+
+    fn try_from(
+        desc: InMemoryRegister<u64, STAGE1_PAGE_DESCRIPTOR::Register>,
+    ) -> Result<AttributeFields, Self::Error> {
+        let mem_attributes = match desc.read(STAGE1_PAGE_DESCRIPTOR::AttrIndx) {
+            mair::NORMAL => MemAttributes::CacheableDRAM,
+            mair::DEVICE => MemAttributes::Device,
+            _ => return Err("Unexpected memory attribute"),
+        };
+
+        let acc_perms = match desc.read_as_enum(STAGE1_PAGE_DESCRIPTOR::AP) {
+            Some(STAGE1_PAGE_DESCRIPTOR::AP::Value::RO_EL1) => AccessPermissions::ReadOnly,
+            Some(STAGE1_PAGE_DESCRIPTOR::AP::Value::RW_EL1) => AccessPermissions::ReadWrite,
+            _ => return Err("Unexpected access permission"),
+        };
+
+        let execute_never = desc.read(STAGE1_PAGE_DESCRIPTOR::PXN) > 0;
+
+        Ok(AttributeFields {
+            mem_attributes,
+            acc_perms,
+            execute_never,
+        })
+    }
 }
 
 /// Convert the kernel's generic memory attributes to HW-specific attributes of the MMU.
