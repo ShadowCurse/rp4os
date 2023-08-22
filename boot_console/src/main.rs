@@ -12,7 +12,7 @@ const KERNEL_LOAD_START_SIGNAL: u8 = 0x01;
 const KERNEL_LOAD_SIZE_ACK_SIGNAL: u8 = 0x02;
 const KERNEL_LOAD_ACK_SIGNAL: u8 = 0x03;
 
-const KERNEL_TRANSFER_SPEED_BYTE_PER_SECOND: f64 = 1024.0 * 1024.0;
+const KERNEL_TRANSFER_SPEED_BYTE_PER_SECOND: f64 = 90.0 * 1024.0;
 
 #[derive(Parser)]
 struct Cli {
@@ -62,6 +62,9 @@ async fn main() {
         let mut serial_tio: libc::termios = std::mem::zeroed();
         libc::tcgetattr(serial_raw, &mut serial_tio);
 
+        // enabled raw mode
+        libc::cfmakeraw(&mut serial_tio);
+
         // poll
         serial_tio.c_cc[libc::VTIME] = 0;
         serial_tio.c_cc[libc::VMIN] = 0;
@@ -72,10 +75,11 @@ async fn main() {
         serial_tio.c_cflag = libc::CS8 | libc::CREAD | libc::CLOCAL;
         serial_tio.c_lflag = 0;
 
-        libc::cfsetispeed(&mut serial_tio, cli.baud);
-        libc::cfsetospeed(&mut serial_tio, cli.baud);
-
-        libc::tcsetattr(serial_raw, libc::TCSAFLUSH, &serial_tio);
+        libc::cfsetspeed(&mut serial_tio, libc::B921600);
+        if libc::tcsetattr(serial_raw, libc::TCSANOW, &serial_tio) != 0 {
+            println!("could not set attributes for serial fd");
+            return;
+        }
 
         serial_raw
     };
@@ -160,6 +164,10 @@ async fn send_kernel(kernel_path: &PathBuf, async_serial: &mut tokio::fs::File) 
                 ));
             }
             eprintln!("\n Time took: {:#?}", now.elapsed());
+            eprintln!(
+                "\n Actual speed: {} KB/s",
+                (kernel.len() / 1024) as f64 / now.elapsed().as_secs_f64()
+            );
 
             while async_serial.read_to_end(&mut buff).await.unwrap() == 0 {}
             if buff != [KERNEL_LOAD_ACK_SIGNAL] {
