@@ -6,7 +6,7 @@ use crate::{
     bsp::memory::mmu::KernelGranule, info, size_human_readable_ceil, synchronization,
     synchronization::InitStateLock, warn,
 };
-use synchronization::interface::ReadWriteEx;
+use synchronization::ReadWriteExclusive;
 
 static KERNEL_MAPPING_RECORDS: InitStateLock<MappingRecords> =
     InitStateLock::new(MappingRecords::new());

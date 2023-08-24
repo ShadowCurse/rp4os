@@ -88,7 +88,7 @@ use crate::{
     synchronization,
     synchronization::InitStateLock,
 };
-use synchronization::interface::ReadWriteEx;
+use synchronization::ReadWriteExclusive;
 
 /// Used for the associated type of trait [`exception::asynchronous::interface::IRQManager`].
 pub type IRQNumber = BoundedUsize<{ GICv2::MAX_IRQ_NUMBER }>;

@@ -1,4 +1,8 @@
-use crate::{exception::asynchronous::IRQNumber, info, synchronization::{InitStateLock, interface::ReadWriteEx}};
+use crate::{
+    exception::asynchronous::IRQNumber,
+    info,
+    synchronization::{InitStateLock, ReadWriteExclusive},
+};
 
 const NUM_DRIVERS: usize = 5;
 pub static DRIVER_MANAGER: DriverManager<IRQNumber> = DriverManager::new();

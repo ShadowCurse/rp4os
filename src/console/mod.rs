@@ -1,6 +1,6 @@
 use crate::console::interface::Console;
-use crate::synchronization::interface::ReadWriteEx;
 use crate::synchronization::InitStateLock;
+use crate::synchronization::ReadWriteExclusive;
 
 pub mod null_console;
 

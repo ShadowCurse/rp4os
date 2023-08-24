@@ -59,7 +59,7 @@ fn debug_print_alloc_dealloc(operation: &'static str, ptr: *mut u8, layout: Layo
 //--------------------------------------------------------------------------------------------------
 // Public Code
 //--------------------------------------------------------------------------------------------------
-use synchronization::interface::Mutex;
+use synchronization::Mutex;
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {

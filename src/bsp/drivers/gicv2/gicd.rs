@@ -1,14 +1,16 @@
+use super::IRQNumber;
 use crate::{
-    bsp::drivers::common::MMIODerefWrapper, state, synchronization,
-    synchronization::IRQSafeNullLock, memory::{Virtual, Address},
+    bsp::drivers::common::MMIODerefWrapper,
+    memory::{Address, Virtual},
+    state, synchronization,
+    synchronization::IRQSafeNullLock,
 };
-use synchronization::interface::Mutex;
+use synchronization::Mutex;
 use tock_registers::{
     interfaces::{Readable, Writeable},
     register_bitfields, register_structs,
     registers::{ReadOnly, ReadWrite},
 };
-use super::IRQNumber;
 
 register_bitfields! {
     u32,

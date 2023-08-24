@@ -24,7 +24,7 @@ use core::{
 use crate::{
     bsp::memory::mmu::{virt_mmio_remap_region, KernelGranule, KERNEL_TRANSLATION_TABLES},
     is_aligned,
-    synchronization::interface::{Mutex, ReadWriteEx},
+    synchronization::{Mutex, ReadWriteExclusive},
     warn,
 };
 

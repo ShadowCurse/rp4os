@@ -1,14 +1,13 @@
 //! BSP Memory Management Unit.
 
-use crate::memory::mmu::mapping_record::kernel_add_mapping_record;
 use crate::memory::mmu::translation_table::interface::TranslationTable;
 use crate::memory::mmu::{
     kernel_map_at, AssociatedTranslationTable, MemoryRegion, PageAddress, TranslationGranule,
 };
 use crate::memory::mmu::{AccessPermissions, AddressSpace, AttributeFields, MemAttributes};
 use crate::memory::{Physical, Virtual};
-use crate::synchronization::interface::ReadWriteEx;
 use crate::synchronization::InitStateLock;
+use crate::synchronization::ReadWriteExclusive;
 
 /// The translation granule chosen by this BSP. This will be used everywhere else in the kernel to
 /// derive respective data structures and their sizes. For example, the `crate::memory::mmu::Page`.

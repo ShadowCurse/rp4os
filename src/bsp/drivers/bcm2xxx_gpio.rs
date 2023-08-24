@@ -2,7 +2,7 @@ use crate::{
     bsp::drivers::common::MMIODerefWrapper,
     driver,
     memory::{Address, Virtual},
-    synchronization::{interface::Mutex, IRQSafeNullLock},
+    synchronization::{IRQSafeNullLock, Mutex},
 };
 use tock_registers::{
     interfaces::{ReadWriteable, Writeable},

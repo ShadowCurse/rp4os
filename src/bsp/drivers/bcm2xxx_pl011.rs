@@ -7,7 +7,7 @@ use crate::{
     driver::interface::DeviceDriver,
     exception::asynchronous::{interface::IRQHandler, irq_manager, IRQHandlerDescriptor},
     memory::{Address, Virtual},
-    synchronization::{interface::Mutex, IRQSafeNullLock},
+    synchronization::{IRQSafeNullLock, Mutex},
 };
 use tock_registers::{
     interfaces::{Readable, Writeable},
