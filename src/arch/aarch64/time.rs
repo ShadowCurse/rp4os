@@ -6,7 +6,7 @@ use core::{
 };
 use tock_registers::interfaces::Readable;
 
-const NANOSEC_PER_SEC: NonZeroU64 = NonZeroU64::new(1_000_000_000).unwrap();
+use super::NANOSEC_PER_SEC;
 
 /// Boot assembly code overwrites this value with the value of CNTFRQ_EL0 before any Rust code is
 /// executed. This given value here is just a (safe) dummy.
@@ -47,7 +47,7 @@ fn arch_timer_counter_frequency() -> NonZeroU32 {
 }
 
 #[derive(Copy, Clone, PartialOrd, PartialEq)]
-pub struct TimerCounter(u64);
+struct TimerCounter(u64);
 
 impl TimerCounter {
     pub const MAX: Self = Self(u64::MAX);
