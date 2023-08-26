@@ -83,7 +83,7 @@ use crate::{
     bsp::cpu::BOOT_CORE_ID,
     cpu::smp::core_id,
     driver::interface::DeviceDriver,
-    exception::asynchronous::{interface::IRQManager, IRQContext, IRQHandlerDescriptor},
+    exception::asynchronous::{IRQContext, IRQHandlerDescriptor, IRQManager},
     memory::{Address, Virtual},
     synchronization,
     synchronization::InitStateLock,
@@ -156,7 +156,7 @@ impl IRQManager for GICv2 {
         irq_handler_descriptor: IRQHandlerDescriptor<Self::IRQNumberType>,
     ) -> Result<(), &'static str> {
         self.handler_table.write(|table| {
-            let irq_number = irq_handler_descriptor.number().get();
+            let irq_number = irq_handler_descriptor.number.get();
 
             if table[irq_number].is_some() {
                 return Err("IRQ handler already registered");
@@ -188,7 +188,7 @@ impl IRQManager for GICv2 {
                 None => panic!("No handler registered for IRQ {}", irq_number),
                 Some(descriptor) => {
                     // Call the IRQ handler. Panics on failure.
-                    descriptor.handler().handle().expect("Error handling IRQ");
+                    descriptor.handler.handle().expect("Error handling IRQ");
                 }
             }
         });
@@ -205,7 +205,7 @@ impl IRQManager for GICv2 {
         self.handler_table.read(|table| {
             for (i, opt) in table.iter().skip(32).enumerate() {
                 if let Some(handler) = opt {
-                    info!("{: >3}. {}", i + 32, handler.name());
+                    info!("{: >3}. {}", i + 32, handler.name);
                 }
             }
         });

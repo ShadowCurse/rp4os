@@ -17,7 +17,7 @@ global_asm!(include_str!("exception.s"));
 /// - The vector table and the symbol `__exception_vector_table_start` from the linker script must
 ///   adhere to the alignment and size constraints demanded by the ARMv8-A Architecture Reference
 ///   Manual.
-pub unsafe fn handling_init() {
+pub unsafe fn set_exception_vector() {
     // Provided by exception.S.
     extern "Rust" {
         static __exception_vector_start: UnsafeCell<()>;

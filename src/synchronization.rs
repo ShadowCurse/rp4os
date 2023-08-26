@@ -1,5 +1,5 @@
 use crate::{
-    exception::asynchronous::exec_with_irq_masked, exception_level::is_local_irq_masked,
+    exception::asynchronous::exec_with_irq_masked, exception::local_irq_enabled,
     state::state_manager,
 };
 use core::cell::UnsafeCell;
@@ -94,7 +94,7 @@ impl<T> ReadWriteExclusive for InitStateLock<T> {
             "InitStateLock::write called after kernel init phase"
         );
         assert!(
-            !is_local_irq_masked(),
+            local_irq_enabled(),
             "InitStateLock::write called with IRQs unmasked"
         );
 

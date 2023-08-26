@@ -18,7 +18,7 @@ mod boot;
 /// - Only a single core must be active and running this function.
 /// - The init calls in this function must appear in the correct order.
 unsafe fn kernel_init() -> ! {
-    exception::handling_init();
+    exception::set_exception_vector();
 
     let phys_kernel_tables_base_addr = match memory::mmu::kernel_map_binary() {
         Err(string) => panic!("Error mapping kernel binary: {}", string),
@@ -41,7 +41,7 @@ unsafe fn kernel_init() -> ! {
     // println! is usable from here on.
 
     // Unmask interrupts on the boot CPU core.
-    exception_level::local_irq_unmask();
+    exception::local_irq_unmask();
 
     // Announce conclusion of the kernel_init() phase.
     state::state_manager().transition_to_single_core_main();
@@ -62,11 +62,11 @@ fn kernel_main() -> ! {
     info!("MMU online:");
     memory::mmu::kernel_print_mappings();
 
-    let (_, privilege_level) = exception_level::current_privilege_level();
-    info!("Current privilege level: {}", privilege_level);
+    let exception_level = exception::ExceptionLevel::current_level();
+    info!("Current privilege level: {:?}", exception_level);
 
     info!("Exception handling state:");
-    exception_level::print_state();
+    exception::print_exception_state();
 
     info!(
         "Architectural timer resolution: {} ns",

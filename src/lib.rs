@@ -18,7 +18,6 @@ pub mod console;
 pub mod cpu;
 pub mod driver;
 pub mod exception;
-pub mod exception_level;
 pub mod memory;
 pub mod panic;
 pub mod print;

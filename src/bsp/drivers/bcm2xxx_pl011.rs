@@ -5,7 +5,7 @@ use crate::{
     console::interface::{Console, Read, Statistics, Write},
     cpu,
     driver::interface::DeviceDriver,
-    exception::asynchronous::{interface::IRQHandler, irq_manager, IRQHandlerDescriptor},
+    exception::asynchronous::{irq_manager, IRQHandler, IRQHandlerDescriptor},
     memory::{Address, Virtual},
     synchronization::{IRQSafeNullLock, Mutex},
 };
@@ -395,7 +395,11 @@ impl DeviceDriver for PL011Uart {
         &'static self,
         irq_number: &Self::IRQNumberType,
     ) -> Result<(), &'static str> {
-        let descriptor = IRQHandlerDescriptor::new(*irq_number, Self::COMPATIBLE, self);
+        let descriptor = IRQHandlerDescriptor {
+            number: *irq_number,
+            name: Self::COMPATIBLE,
+            handler: self,
+        };
 
         irq_manager().register_handler(descriptor)?;
         irq_manager().enable(irq_number);

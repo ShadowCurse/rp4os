@@ -1,15 +1,11 @@
-// #[path = "../arch/aarch64/exception/asynchronous.rs"]
-// mod arch_asynchronous;
-
 use crate::exception::null_irq_manager::NULL_IRQ_MANAGER;
-use crate::exception_level::{local_irq_mask_save, local_irq_restore};
+use crate::exception::{local_irq_mask_and_save, local_irq_restore};
 use crate::synchronization;
 use core::marker::PhantomData;
 use synchronization::{InitStateLock, ReadWriteExclusive};
 
-static CUR_IRQ_MANAGER: InitStateLock<
-    &'static (dyn interface::IRQManager<IRQNumberType = IRQNumber> + Sync),
-> = InitStateLock::new(&NULL_IRQ_MANAGER);
+static IRQ_MANAGER: InitStateLock<&'static (dyn IRQManager<IRQNumberType = IRQNumber> + Sync)> =
+    InitStateLock::new(&NULL_IRQ_MANAGER);
 
 /// Interrupt number as defined by the BSP.
 pub type IRQNumber = crate::bsp::drivers::gicv2::IRQNumber;
@@ -20,69 +16,60 @@ pub type IRQNumber = crate::bsp::drivers::gicv2::IRQNumber;
 /// previous state before returning, so this is deemed safe.
 #[inline(always)]
 pub fn exec_with_irq_masked<T>(f: impl FnOnce() -> T) -> T {
-    let saved = local_irq_mask_save();
+    let saved = local_irq_mask_and_save();
     let ret = f();
     local_irq_restore(saved);
 
     ret
 }
 
-/// Register a new IRQ manager.
-pub fn register_irq_manager(
-    new_manager: &'static (dyn interface::IRQManager<IRQNumberType = IRQNumber> + Sync),
-) {
-    CUR_IRQ_MANAGER.write(|manager| *manager = new_manager);
+/// Set a new IRQ manager.
+pub fn set_irq_manager(new_manager: &'static (dyn IRQManager<IRQNumberType = IRQNumber> + Sync)) {
+    IRQ_MANAGER.write(|manager| *manager = new_manager);
 }
 
 /// Return a reference to the currently registered IRQ manager.
 ///
 /// This is the IRQ manager used by the architectural interrupt handling code.
-pub fn irq_manager() -> &'static dyn interface::IRQManager<IRQNumberType = IRQNumber> {
-    CUR_IRQ_MANAGER.read(|manager| *manager)
+pub fn irq_manager() -> &'static dyn IRQManager<IRQNumberType = IRQNumber> {
+    IRQ_MANAGER.read(|manager| *manager)
 }
 
-/// Asynchronous exception handling interfaces.
-pub mod interface {
+/// Implemented by types that handle IRQs.
+pub trait IRQHandler {
+    /// Called when the corresponding interrupt is asserted.
+    fn handle(&self) -> Result<(), &'static str>;
+}
 
-    /// Implemented by types that handle IRQs.
-    pub trait IRQHandler {
-        /// Called when the corresponding interrupt is asserted.
-        fn handle(&self) -> Result<(), &'static str>;
-    }
+/// IRQ management functions.
+///
+/// The `BSP` is supposed to supply one global instance. Typically implemented by the
+/// platform's interrupt controller.
+pub trait IRQManager {
+    /// The IRQ number type depends on the implementation.
+    type IRQNumberType: Copy;
 
-    /// IRQ management functions.
+    /// Register a handler.
+    fn register_handler(
+        &self,
+        irq_handler_descriptor: IRQHandlerDescriptor<Self::IRQNumberType>,
+    ) -> Result<(), &'static str>;
+
+    /// Enable an interrupt in the controller.
+    fn enable(&self, irq_number: &Self::IRQNumberType);
+
+    /// Handle pending interrupts.
     ///
-    /// The `BSP` is supposed to supply one global instance. Typically implemented by the
-    /// platform's interrupt controller.
-    pub trait IRQManager {
-        /// The IRQ number type depends on the implementation.
-        type IRQNumberType: Copy;
+    /// This function is called directly from the CPU's IRQ exception vector. On AArch64,
+    /// this means that the respective CPU core has disabled exception handling.
+    /// This function can therefore not be preempted and runs start to finish.
+    ///
+    /// Takes an IRQContext token to ensure it can only be called from IRQ context.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn handle_pending_irqs<'irq_context>(&'irq_context self, ic: &IRQContext<'irq_context>);
 
-        /// Register a handler.
-        fn register_handler(
-            &self,
-            irq_handler_descriptor: super::IRQHandlerDescriptor<Self::IRQNumberType>,
-        ) -> Result<(), &'static str>;
-
-        /// Enable an interrupt in the controller.
-        fn enable(&self, irq_number: &Self::IRQNumberType);
-
-        /// Handle pending interrupts.
-        ///
-        /// This function is called directly from the CPU's IRQ exception vector. On AArch64,
-        /// this means that the respective CPU core has disabled exception handling.
-        /// This function can therefore not be preempted and runs start to finish.
-        ///
-        /// Takes an IRQContext token to ensure it can only be called from IRQ context.
-        #[allow(clippy::trivially_copy_pass_by_ref)]
-        fn handle_pending_irqs<'irq_context>(
-            &'irq_context self,
-            ic: &super::IRQContext<'irq_context>,
-        );
-
-        /// Print list of registered handlers.
-        fn print_handler(&self) {}
-    }
+    /// Print list of registered handlers.
+    fn print_handler(&self) {}
 }
 
 /// IRQContext token.
@@ -121,44 +108,9 @@ where
     T: Copy,
 {
     /// The IRQ number.
-    number: T,
-
+    pub number: T,
     /// Descriptive name.
-    name: &'static str,
-
+    pub name: &'static str,
     /// Reference to handler trait object.
-    handler: &'static (dyn interface::IRQHandler + Sync),
-}
-
-impl<T> IRQHandlerDescriptor<T>
-where
-    T: Copy,
-{
-    /// Create an instance.
-    pub const fn new(
-        number: T,
-        name: &'static str,
-        handler: &'static (dyn interface::IRQHandler + Sync),
-    ) -> Self {
-        Self {
-            number,
-            name,
-            handler,
-        }
-    }
-
-    /// Return the number.
-    pub const fn number(&self) -> T {
-        self.number
-    }
-
-    /// Return the name.
-    pub const fn name(&self) -> &'static str {
-        self.name
-    }
-
-    /// Return the handler.
-    pub const fn handler(&self) -> &'static (dyn interface::IRQHandler + Sync) {
-        self.handler
-    }
+    pub handler: &'static (dyn IRQHandler + Sync),
 }

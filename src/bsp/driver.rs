@@ -3,7 +3,7 @@ use crate::{
     console,
     driver::DeviceDriverDescriptor,
     driver::DRIVER_MANAGER,
-    exception::asynchronous::register_irq_manager,
+    exception::asynchronous::set_irq_manager,
     memory::mmu::{kernel_map_mmio, MMIODescriptor},
 };
 use core::mem::MaybeUninit;
@@ -83,7 +83,7 @@ unsafe fn instantiate_interrupt_controller() -> Result<(), &'static str> {
 
 /// This must be called only after successful init of the interrupt controller driver.
 unsafe fn post_init_interrupt_controller() -> Result<(), &'static str> {
-    register_irq_manager(INTERRUPT_CONTROLLER.assume_init_ref());
+    set_irq_manager(INTERRUPT_CONTROLLER.assume_init_ref());
     Ok(())
 }
 

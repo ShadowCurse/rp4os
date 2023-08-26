@@ -1,10 +1,11 @@
 use crate::{
     bsp::drivers::gicv2::IRQNumber,
-    exception::asynchronous::{interface::IRQManager, IRQContext, IRQHandlerDescriptor},
+    exception::asynchronous::{IRQContext, IRQHandlerDescriptor, IRQManager},
 };
 
 pub static NULL_IRQ_MANAGER: NullIRQManager = NullIRQManager {};
 
+/// Dummy irq manager. Used befor real irq manager is initialized.
 pub struct NullIRQManager;
 
 impl IRQManager for NullIRQManager {

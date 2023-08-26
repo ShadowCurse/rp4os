@@ -1,33 +1,28 @@
 use crate::info;
-use aarch64_cpu::registers::*;
+use aarch64_cpu::registers::{CurrentEL, DAIF};
 use core::arch::asm;
 use tock_registers::interfaces::{Readable, Writeable};
 
-use crate::exception_level::PrivilegeLevel;
+use crate::exception::ExceptionLevel;
 
 /// The processing element's current privilege level.
-pub fn current_privilege_level() -> (PrivilegeLevel, &'static str) {
+pub fn current_exception_level() -> ExceptionLevel {
     let el = CurrentEL.read_as_enum(CurrentEL::EL);
     match el {
-        Some(CurrentEL::EL::Value::EL2) => (PrivilegeLevel::Hypervisor, "EL2"),
-        Some(CurrentEL::EL::Value::EL1) => (PrivilegeLevel::Kernel, "EL1"),
-        Some(CurrentEL::EL::Value::EL0) => (PrivilegeLevel::User, "EL0"),
-        _ => (PrivilegeLevel::Unknown, "Unknown"),
+        Some(CurrentEL::EL::Value::EL2) => ExceptionLevel::Hypervisor,
+        Some(CurrentEL::EL::Value::EL1) => ExceptionLevel::Kernel,
+        Some(CurrentEL::EL::Value::EL0) => ExceptionLevel::User,
+        _ => ExceptionLevel::Unknown,
     }
 }
 
 /// Print the AArch64 exceptions status.
 #[rustfmt::skip]
-pub fn print_state() {
-
+pub fn print_exception_state() {
     info!("Debug:  masked: {}", Debug::is_set());
     info!("SError: masked: {}", SError::is_set());
     info!("IRQ:    masked: {}", Irq::is_set());
     info!("FIQ:    masked: {}", Fiq::is_set());
-}
-
-trait DaifField {
-    fn daif_field() -> tock_registers::fields::Field<u64, DAIF::Register>;
 }
 
 struct Debug;
@@ -50,14 +45,11 @@ impl_daif!(SError, A);
 impl_daif!(Irq, I);
 impl_daif!(Fiq, F);
 
+pub const DAIF_IRQ: u8 = 0b0010;
+
 /// Returns whether IRQs are masked on the executing core.
-pub fn is_local_irq_masked() -> bool {
-    !Irq::is_set()
-}
-
-
-mod daif_bits {
-    pub const IRQ: u8 = 0b0010;
+pub fn local_irq_enabled() -> bool {
+    Irq::is_set()
 }
 
 /// Unmask IRQs on the executing core.
@@ -72,7 +64,7 @@ pub fn local_irq_unmask() {
     unsafe {
         asm!(
             "msr DAIFClr, {arg}",
-            arg = const daif_bits::IRQ,
+            arg = const DAIF_IRQ,
             options(nomem, nostack, preserves_flags)
         );
     }
@@ -84,7 +76,7 @@ pub fn local_irq_mask() {
     unsafe {
         asm!(
             "msr DAIFSet, {arg}",
-            arg = const daif_bits::IRQ,
+            arg = const DAIF_IRQ,
             options(nomem, nostack, preserves_flags)
         );
     }
@@ -92,7 +84,7 @@ pub fn local_irq_mask() {
 
 /// Mask IRQs on the executing core and return the previously saved interrupt mask bits (DAIF).
 #[inline(always)]
-pub fn local_irq_mask_save() -> u64 {
+pub fn local_irq_mask_and_save() -> u64 {
     let saved = DAIF.get();
     local_irq_mask();
 
