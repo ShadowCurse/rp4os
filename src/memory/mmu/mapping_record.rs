@@ -191,7 +191,7 @@ impl MappingRecords {
                 AccessPermissions::ReadWrite => "RW",
             };
 
-            let xn = if i.attribute_fields.execute_never {
+            let xn = if i.attribute_fields.executable {
                 "XN"
             } else {
                 "X"

@@ -355,12 +355,12 @@ impl TryFrom<InMemoryRegister<u64, STAGE1_PAGE_DESCRIPTOR::Register>> for Attrib
             _ => return Err("Unexpected access permission"),
         };
 
-        let execute_never = desc.read(STAGE1_PAGE_DESCRIPTOR::PXN) > 0;
+        let executable = desc.read(STAGE1_PAGE_DESCRIPTOR::PXN) > 0;
 
         Ok(AttributeFields {
             mem_attributes,
             acc_perms,
-            execute_never,
+            executable,
         })
     }
 }
@@ -387,10 +387,10 @@ impl From<AttributeFields> for FieldValue<u64, STAGE1_PAGE_DESCRIPTOR::Register>
         };
 
         // The execute-never attribute is mapped to PXN in AArch64.
-        desc += if attribute_fields.execute_never {
-            STAGE1_PAGE_DESCRIPTOR::PXN::True
-        } else {
+        desc += if attribute_fields.executable {
             STAGE1_PAGE_DESCRIPTOR::PXN::False
+        } else {
+            STAGE1_PAGE_DESCRIPTOR::PXN::True
         };
 
         // Always set unprivileged exectue-never as long as userspace is not implemented yet.

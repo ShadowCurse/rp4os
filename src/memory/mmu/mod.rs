@@ -209,7 +209,7 @@ pub unsafe fn kernel_map_mmio(
                 &AttributeFields {
                     mem_attributes: MemAttributes::Device,
                     acc_perms: AccessPermissions::ReadWrite,
-                    execute_never: true,
+                    executable: false,
                 },
             )?;
 
@@ -273,7 +273,7 @@ pub enum AccessPermissions {
 pub struct AttributeFields {
     pub mem_attributes: MemAttributes,
     pub acc_perms: AccessPermissions,
-    pub execute_never: bool,
+    pub executable: bool,
 }
 
 /// A wrapper type around [Address] that ensures page alignment.

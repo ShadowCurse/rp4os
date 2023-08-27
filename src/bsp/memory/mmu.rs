@@ -23,7 +23,6 @@ type KernelTranslationTable = <KernelVirtAddrSpace as AssociatedTranslationTable
 /// It is mandatory that InitStateLock is transparent.
 ///
 /// That is, `size_of(InitStateLock<KernelTranslationTable>) == size_of(KernelTranslationTable)`.
-/// There is a unit tests that checks this porperty.
 pub static KERNEL_TRANSLATION_TABLES: InitStateLock<KernelTranslationTable> =
     InitStateLock::new(KernelTranslationTable::new());
 
@@ -116,7 +115,7 @@ pub unsafe fn kernel_map_binary() -> Result<(), &'static str> {
         &AttributeFields {
             mem_attributes: MemAttributes::CacheableDRAM,
             acc_perms: AccessPermissions::ReadWrite,
-            execute_never: true,
+            executable: false,
         },
     )?;
 
@@ -127,7 +126,7 @@ pub unsafe fn kernel_map_binary() -> Result<(), &'static str> {
         &AttributeFields {
             mem_attributes: MemAttributes::CacheableDRAM,
             acc_perms: AccessPermissions::ReadWrite,
-            execute_never: true,
+            executable: false,
         },
     )?;
 
@@ -138,7 +137,7 @@ pub unsafe fn kernel_map_binary() -> Result<(), &'static str> {
         &AttributeFields {
             mem_attributes: MemAttributes::CacheableDRAM,
             acc_perms: AccessPermissions::ReadOnly,
-            execute_never: false,
+            executable: true,
         },
     )?;
 
@@ -149,7 +148,7 @@ pub unsafe fn kernel_map_binary() -> Result<(), &'static str> {
         &AttributeFields {
             mem_attributes: MemAttributes::CacheableDRAM,
             acc_perms: AccessPermissions::ReadWrite,
-            execute_never: true,
+            executable: false,
         },
     )?;
 
