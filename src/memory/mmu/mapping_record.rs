@@ -11,8 +11,43 @@ use crate::{
 };
 use synchronization::ReadWriteExclusive;
 
+const MAX_MAPPINGS: usize = 20;
+
 static KERNEL_MAPPING_RECORDS: InitStateLock<MappingRecords> =
     InitStateLock::new(MappingRecords::new());
+
+/// Add an entry to the mapping info record.
+pub fn kernel_add_mapping_record(
+    name: &'static str,
+    virt_region: &MemoryRegion<Virtual>,
+    phys_region: &MemoryRegion<Physical>,
+    attr: &AttributeFields,
+) -> Result<(), &'static str> {
+    KERNEL_MAPPING_RECORDS.write(|records| records.add(name, virt_region, phys_region, attr))
+}
+
+/// Tries to add device as a user to the existing record.
+pub fn kernel_try_add_device_record_mmio_user(
+    new_user: &'static str,
+    mmio_descriptor: &MMIODescriptor,
+) -> Option<Address<Virtual>> {
+    let phys_region: MemoryRegion<Physical> = (*mmio_descriptor).into();
+
+    KERNEL_MAPPING_RECORDS.write(|records| {
+        let record = records.find_device_record(&phys_region)?;
+
+        if let Err(x) = record.add_user(new_user) {
+            warn!("{}", x);
+        }
+
+        Some(record.virt_start_addr)
+    })
+}
+
+/// Human-readable print of all recorded kernel mappings.
+pub fn print_kernel_mappings() {
+    KERNEL_MAPPING_RECORDS.read(|mr| mr.print());
+}
 
 /// Type describing a virtual memory mapping.
 #[derive(Copy, Clone)]
@@ -25,7 +60,7 @@ struct MappingRecordEntry {
 }
 
 struct MappingRecords {
-    inner: [Option<MappingRecordEntry>; 12],
+    inner: [Option<MappingRecordEntry>; MAX_MAPPINGS],
 }
 
 impl MappingRecordEntry {
@@ -61,7 +96,9 @@ impl MappingRecordEntry {
 
 impl MappingRecords {
     pub const fn new() -> Self {
-        Self { inner: [None; 12] }
+        Self {
+            inner: [None; MAX_MAPPINGS],
+        }
     }
 
     fn size(&self) -> usize {
@@ -186,37 +223,4 @@ impl MappingRecords {
 
         info!("      -------------------------------------------------------------------------------------------------------------------------------------------");
     }
-}
-
-/// Add an entry to the mapping info record.
-pub fn kernel_add_mapping_record(
-    name: &'static str,
-    virt_region: &MemoryRegion<Virtual>,
-    phys_region: &MemoryRegion<Physical>,
-    attr: &AttributeFields,
-) -> Result<(), &'static str> {
-    KERNEL_MAPPING_RECORDS.write(|mr| mr.add(name, virt_region, phys_region, attr))
-}
-
-/// Tries to add device as a user to the existing record.
-pub fn kernel_try_add_device_record_mmio_user(
-    new_user: &'static str,
-    mmio_descriptor: &MMIODescriptor,
-) -> Option<Address<Virtual>> {
-    let phys_region: MemoryRegion<Physical> = (*mmio_descriptor).into();
-
-    KERNEL_MAPPING_RECORDS.write(|records| {
-        let record = records.find_device_record(&phys_region)?;
-
-        if let Err(x) = record.add_user(new_user) {
-            warn!("{}", x);
-        }
-
-        Some(record.virt_start_addr)
-    })
-}
-
-/// Human-readable print of all recorded kernel mappings.
-pub fn kernel_print() {
-    KERNEL_MAPPING_RECORDS.read(|mr| mr.print());
 }

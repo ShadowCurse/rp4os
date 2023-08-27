@@ -43,7 +43,7 @@ unsafe fn instantiate_gpio() -> Result<(), &'static str> {
         crate::bsp::memory::map::mmio::GPIO_START,
         crate::bsp::memory::map::mmio::GPIO_SIZE,
     );
-    let virt_addr = crate::memory::mmu::kernel_map_mmio(
+    let virt_addr = kernel_map_mmio(
         super::drivers::bcm2xxx_gpio::GPIO::COMPATIBLE,
         &mmio_descriptor,
     )?;
@@ -65,13 +65,13 @@ unsafe fn instantiate_interrupt_controller() -> Result<(), &'static str> {
         crate::bsp::memory::map::mmio::GICD_START,
         crate::bsp::memory::map::mmio::GICD_SIZE,
     );
-    let gicd_virt_addr = crate::memory::mmu::kernel_map_mmio("GICv2 GICD", &gicd_mmio_descriptor)?;
+    let gicd_virt_addr = kernel_map_mmio("GICv2 GICD", &gicd_mmio_descriptor)?;
 
     let gicc_mmio_descriptor = MMIODescriptor::new(
         crate::bsp::memory::map::mmio::GICC_START,
         crate::bsp::memory::map::mmio::GICC_SIZE,
     );
-    let gicc_virt_addr = crate::memory::mmu::kernel_map_mmio("GICV2 GICC", &gicc_mmio_descriptor)?;
+    let gicc_virt_addr = kernel_map_mmio("GICV2 GICC", &gicc_mmio_descriptor)?;
 
     INTERRUPT_CONTROLLER.write(super::drivers::gicv2::GICv2::new(
         gicd_virt_addr,

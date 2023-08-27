@@ -3,6 +3,7 @@
 //! Only 64 KiB granule is supported.
 
 use tock_registers::{
+    fields::FieldValue,
     interfaces::{Readable, Writeable},
     register_bitfields,
     registers::InMemoryRegister,
@@ -10,8 +11,8 @@ use tock_registers::{
 
 use crate::memory::{
     mmu::{
-        AccessPermissions, AttributeFields, MS512MiB, MS64KiB, MemAttributes, MemoryRegion,
-        PageAddress,
+        AccessPermissions, AddressSpace, AssociatedTranslationTable, AttributeFields, MS512MiB,
+        MS64KiB, MemAttributes, MemoryRegion, PageAddress,
     },
     Address, Physical, Virtual,
 };
@@ -148,7 +149,7 @@ impl<const NUM_TABLES: usize> FixedSizeTranslationTable<NUM_TABLES> {
     ///
     /// Doesn't allow overriding an already valid page.
     #[inline(always)]
-    fn set_page_descriptor_from_page_addr(
+    fn set_descriptor(
         &mut self,
         virt_page_addr: PageAddress<Virtual>,
         new_desc: &PageDescriptor,
@@ -166,7 +167,7 @@ impl<const NUM_TABLES: usize> FixedSizeTranslationTable<NUM_TABLES> {
 
     /// Returns the PageDescriptor corresponding to the supplied page address.
     #[inline(always)]
-    fn page_descriptor_from_page_addr(
+    fn get_descriptor(
         &self,
         virt_page_addr: PageAddress<Virtual>,
     ) -> Result<&PageDescriptor, &'static str> {
@@ -184,10 +185,10 @@ impl<const NUM_TABLES: usize> TranslationTable for FixedSizeTranslationTable<NUM
         }
 
         // Populate the l2 entries.
-        for (lvl2_nr, lvl2_entry) in self.lvl2.iter_mut().enumerate() {
-            let phys_table_addr = self.lvl3[lvl2_nr].phys_start_addr();
+        for (i, lvl2_entry) in self.lvl2.iter_mut().enumerate() {
+            let phys_table_addr = self.lvl3[i].phys_start_addr();
 
-            let new_desc = TableDescriptor::from_next_lvl_table_addr(phys_table_addr);
+            let new_desc = TableDescriptor::from_phys_addr(phys_table_addr);
             *lvl2_entry = new_desc;
         }
 
@@ -215,12 +216,9 @@ impl<const NUM_TABLES: usize> TranslationTable for FixedSizeTranslationTable<NUM
             return Err("Tried to map outside of physical address space");
         }
 
-        let iter = phys_region.into_iter().zip(virt_region.into_iter());
-        for (phys_page_addr, virt_page_addr) in iter {
-            let new_desc = PageDescriptor::from_output_page_addr(phys_page_addr, attr);
-            let virt_page = virt_page_addr;
-
-            self.set_page_descriptor_from_page_addr(virt_page, &new_desc)?;
+        for (phys_page_addr, virt_page_addr) in phys_region.as_range().zip(virt_region.as_range()) {
+            let new_desc = PageDescriptor::new(phys_page_addr, attr);
+            self.set_descriptor(virt_page_addr, &new_desc)?;
         }
 
         Ok(())
@@ -230,7 +228,7 @@ impl<const NUM_TABLES: usize> TranslationTable for FixedSizeTranslationTable<NUM
         &self,
         virt_page_addr: PageAddress<Virtual>,
     ) -> Result<AttributeFields, &'static str> {
-        let page_desc = self.page_descriptor_from_page_addr(virt_page_addr)?;
+        let page_desc = self.get_descriptor(virt_page_addr)?;
 
         if !page_desc.is_valid() {
             return Err("Page marked invalid");
@@ -269,7 +267,7 @@ impl TableDescriptor {
     }
 
     /// Create an instance pointing to the supplied address.
-    pub fn from_next_lvl_table_addr(phys_next_lvl_table_addr: Address<Physical>) -> Self {
+    pub fn from_phys_addr(phys_next_lvl_table_addr: Address<Physical>) -> Self {
         let val = InMemoryRegister::<u64, STAGE1_TABLE_DESCRIPTOR::Register>::new(0);
 
         let shifted = phys_next_lvl_table_addr.as_usize() >> MS64KiB::SHIFT;
@@ -301,7 +299,7 @@ impl PageDescriptor {
     }
 
     /// Create an instance.
-    pub fn from_output_page_addr(
+    pub fn new(
         phys_output_addr: PageAddress<Physical>,
         attribute_fields: &AttributeFields,
     ) -> Self {
@@ -331,8 +329,7 @@ impl PageDescriptor {
     }
 }
 
-impl<const AS_SIZE: usize> crate::memory::mmu::AssociatedTranslationTable
-    for crate::memory::mmu::AddressSpace<AS_SIZE>
+impl<const S: usize> AssociatedTranslationTable for AddressSpace<S>
 where
     [u8; Self::SIZE >> MS512MiB::SHIFT]: Sized,
 {
@@ -369,9 +366,7 @@ impl TryFrom<InMemoryRegister<u64, STAGE1_PAGE_DESCRIPTOR::Register>> for Attrib
 }
 
 /// Convert the kernel's generic memory attributes to HW-specific attributes of the MMU.
-impl From<AttributeFields>
-    for tock_registers::fields::FieldValue<u64, STAGE1_PAGE_DESCRIPTOR::Register>
-{
+impl From<AttributeFields> for FieldValue<u64, STAGE1_PAGE_DESCRIPTOR::Register> {
     fn from(attribute_fields: AttributeFields) -> Self {
         // Memory attributes.
         let mut desc = match attribute_fields.mem_attributes {

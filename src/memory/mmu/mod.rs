@@ -248,7 +248,7 @@ pub unsafe fn enable_mmu_and_caching(
 
 /// Human-readable print of all recorded kernel mappings.
 pub fn kernel_print_mappings() {
-    mapping_record::kernel_print()
+    mapping_record::print_kernel_mappings()
 }
 
 /// Architecture agnostic memory attributes.
@@ -369,7 +369,10 @@ impl<T: AddressType> MemoryRegion<T> {
     }
 
     fn as_range(&self) -> Range<PageAddress<T>> {
-        self.into_iter()
+        Range {
+            start: self.start_page,
+            end: self.end_page_exclusive,
+        }
     }
 
     /// Returns the exclusive end page address.
@@ -438,18 +441,6 @@ impl<T: AddressType> MemoryRegion<T> {
         self.start_page = left_end_exclusive;
 
         Ok(allocation)
-    }
-}
-
-impl<ATYPE: AddressType> IntoIterator for MemoryRegion<ATYPE> {
-    type Item = PageAddress<ATYPE>;
-    type IntoIter = Range<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Range {
-            start: self.start_page,
-            end: self.end_page_exclusive,
-        }
     }
 }
 
