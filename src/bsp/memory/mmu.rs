@@ -1,8 +1,8 @@
 //! BSP Memory Management Unit.
 
-use crate::memory::mmu::translation_table::interface::TranslationTable;
+use crate::memory::mmu::translation_table::TranslationTable;
 use crate::memory::mmu::{
-    kernel_map_at, AssociatedTranslationTable, MemoryRegion, PageAddress, TranslationGranule,
+    kernel_map_at, AssociatedTranslationTable, MemoryRegion, MemorySize, PageAddress,
 };
 use crate::memory::mmu::{AccessPermissions, AddressSpace, AttributeFields, MemAttributes};
 use crate::memory::{Physical, Virtual};
@@ -10,14 +10,13 @@ use crate::synchronization::InitStateLock;
 use crate::synchronization::ReadWriteExclusive;
 
 /// The translation granule chosen by this BSP. This will be used everywhere else in the kernel to
-/// derive respective data structures and their sizes. For example, the `crate::memory::mmu::Page`.
-pub type KernelGranule = TranslationGranule<{ 64 * 1024 }>;
+/// derive respective data structures and their sizes.
+pub type MSKernel = MemorySize<{ 64 * 1024 }>;
 
 /// The kernel's virtual address space defined by this BSP.
 pub type KernelVirtAddrSpace = AddressSpace<{ 1024 * 1024 * 1024 }>;
 
-type KernelTranslationTable =
-    <KernelVirtAddrSpace as AssociatedTranslationTable>::TableStartFromBottom;
+type KernelTranslationTable = <KernelVirtAddrSpace as AssociatedTranslationTable>::Table;
 
 /// The kernel translation tables.
 ///
@@ -31,9 +30,9 @@ pub static KERNEL_TRANSLATION_TABLES: InitStateLock<KernelTranslationTable> =
 /// Helper function for calculating the number of pages the given parameter spans.
 const fn size_to_num_pages(size: usize) -> usize {
     assert!(size > 0);
-    assert!(size % KernelGranule::SIZE == 0);
+    assert!(size % MSKernel::SIZE == 0);
 
-    size >> KernelGranule::SHIFT
+    size >> MSKernel::SHIFT
 }
 
 /// The heap pages.
@@ -89,13 +88,8 @@ pub fn kernel_page_attributes(
 
 fn kernel_virt_to_phys_region(virt_region: MemoryRegion<Virtual>) -> MemoryRegion<Physical> {
     MemoryRegion::new(
-        PageAddress::from(virt_region.start_page_addr().into_inner().as_usize()),
-        PageAddress::from(
-            virt_region
-                .end_exclusive_page_addr()
-                .into_inner()
-                .as_usize(),
-        ),
+        PageAddress::from(virt_region.start_page.address().as_usize()),
+        PageAddress::from(virt_region.end_page_exclusive.address().as_usize()),
     )
 }
 

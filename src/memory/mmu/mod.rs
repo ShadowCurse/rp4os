@@ -7,7 +7,8 @@
 //! install respective translation tables.
 
 #[path = "../../arch/aarch64/mmu/mod.rs"]
-pub mod arch_mmu;
+mod arch_mmu;
+
 pub mod mapping_record;
 pub mod page_alloc;
 pub mod translation_table;
@@ -22,39 +23,38 @@ use core::{
 };
 
 use crate::{
-    bsp::memory::mmu::{virt_mmio_remap_region, KernelGranule, KERNEL_TRANSLATION_TABLES},
+    bsp::memory::mmu::{virt_mmio_remap_region, MSKernel, KERNEL_TRANSLATION_TABLES},
     is_aligned,
+    memory::{
+        mmu::{
+            mapping_record::{kernel_add_mapping_record, kernel_try_add_device_record_mmio_user},
+            translation_table::TranslationTable,
+        },
+        Address, AddressType, Physical, Virtual,
+    },
     synchronization::{Mutex, ReadWriteExclusive},
     warn,
 };
 
-use self::{
-    interface::MMU,
-    mapping_record::{kernel_add_mapping_record, kernel_try_add_device_record_mmio_user},
-    translation_table::interface::TranslationTable,
-};
+pub static MMU: Aarch64Mmu = arch_mmu::Aarch64Mmu;
 
-use super::{Address, AddressType, Physical, Virtual};
+pub type MS64KiB = MemorySize<{ 64 * 1024 }>;
+pub type MS512MiB = MemorySize<{ 512 * 1024 * 1024 }>;
 
-/// Memory Management interfaces.
-pub mod interface {
-    use super::*;
+/// MMU functions.
+pub trait MemoryManagementUnit {
+    /// Turns on the MMU for the first time and enables data and instruction caching.
+    ///
+    /// # Safety
+    ///
+    /// - Changes the HW's global state.
+    unsafe fn enable_mmu_and_caching(
+        &self,
+        phys_tables_base_addr: Address<Physical>,
+    ) -> Result<(), MMUEnableError>;
 
-    /// MMU functions.
-    pub trait MMU {
-        /// Turns on the MMU for the first time and enables data and instruction caching.
-        ///
-        /// # Safety
-        ///
-        /// - Changes the HW's global state.
-        unsafe fn enable_mmu_and_caching(
-            &self,
-            phys_tables_base_addr: Address<Physical>,
-        ) -> Result<(), MMUEnableError>;
-
-        /// Returns true if the MMU is enabled, false otherwise.
-        fn is_enabled(&self) -> bool;
-    }
+    /// Returns true if the MMU is enabled, false otherwise.
+    fn is_enabled(&self) -> bool;
 }
 
 /// MMU enable errors variants.
@@ -74,9 +74,9 @@ impl Display for MMUEnableError {
 }
 
 /// Describes the characteristics of a translation granule.
-pub struct TranslationGranule<const GRANULE_SIZE: usize>;
+pub struct MemorySize<const SIZE: usize>;
 
-impl<const GRANULE_SIZE: usize> TranslationGranule<GRANULE_SIZE> {
+impl<const SIZE: usize> MemorySize<SIZE> {
     /// The granule's size.
     pub const SIZE: usize = Self::size_checked();
 
@@ -87,8 +87,8 @@ impl<const GRANULE_SIZE: usize> TranslationGranule<GRANULE_SIZE> {
     pub const SHIFT: usize = Self::SIZE.trailing_zeros() as usize;
 
     const fn size_checked() -> usize {
-        assert!(GRANULE_SIZE.is_power_of_two());
-        GRANULE_SIZE
+        assert!(SIZE.is_power_of_two());
+        SIZE
     }
 }
 
@@ -113,11 +113,13 @@ impl<const AS_SIZE: usize> AddressSpace<AS_SIZE> {
 }
 
 /// Intended to be implemented for [`AddressSpace`].
+/// Translation table associated with specific address
+/// space size.
 pub trait AssociatedTranslationTable {
     /// A translation table whose address range is:
     ///
     /// [AS_SIZE - 1, 0]
-    type TableStartFromBottom;
+    type Table;
 }
 
 /// Query the BSP for the reserved virtual addresses for MMIO remapping and initialize the kernel's
@@ -184,7 +186,7 @@ pub unsafe fn kernel_map_mmio(
     mmio_descriptor: &MMIODescriptor,
 ) -> Result<Address<Virtual>, &'static str> {
     let phys_region = MemoryRegion::from(*mmio_descriptor);
-    let offset_into_start_page = mmio_descriptor.start_addr().offset_into_page();
+    let offset_into_start_page = mmio_descriptor.start_addr.offset_into_page();
 
     // Check if an identical region has been mapped for another driver. If so, reuse it.
     let virt_addr =
@@ -211,7 +213,7 @@ pub unsafe fn kernel_map_mmio(
                 },
             )?;
 
-            virt_region.start_addr()
+            virt_region.start_page.address()
         };
 
     Ok(virt_addr + offset_into_start_page)
@@ -241,18 +243,12 @@ pub unsafe fn kernel_map_binary() -> Result<Address<Physical>, &'static str> {
 pub unsafe fn enable_mmu_and_caching(
     phys_tables_base_addr: Address<Physical>,
 ) -> Result<(), MMUEnableError> {
-    arch_mmu::MMU.enable_mmu_and_caching(phys_tables_base_addr)
+    MMU.enable_mmu_and_caching(phys_tables_base_addr)
 }
 
 /// Human-readable print of all recorded kernel mappings.
 pub fn kernel_print_mappings() {
     mapping_record::kernel_print()
-}
-
-/// A wrapper type around [Address] that ensures page alignment.
-#[derive(Copy, Clone, Debug, Eq, PartialOrd, PartialEq)]
-pub struct PageAddress<ATYPE: AddressType> {
-    inner: Address<ATYPE>,
 }
 
 /// Architecture agnostic memory attributes.
@@ -280,9 +276,15 @@ pub struct AttributeFields {
     pub execute_never: bool,
 }
 
-impl<ATYPE: AddressType> PageAddress<ATYPE> {
-    /// Unwraps the value.
-    pub fn into_inner(self) -> Address<ATYPE> {
+/// A wrapper type around [Address] that ensures page alignment.
+#[derive(Copy, Clone, Debug, Eq, PartialOrd, PartialEq)]
+pub struct PageAddress<T: AddressType> {
+    inner: Address<T>,
+}
+
+impl<T: AddressType> PageAddress<T> {
+    /// Internal address.
+    pub fn address(self) -> Address<T> {
         self.inner
     }
 
@@ -295,7 +297,7 @@ impl<ATYPE: AddressType> PageAddress<ATYPE> {
             return Some(self);
         }
 
-        let delta = count.unsigned_abs().checked_mul(KernelGranule::SIZE)?;
+        let delta = count.unsigned_abs().checked_mul(MSKernel::SIZE)?;
         let result = if count.is_positive() {
             self.inner.as_usize().checked_add(delta)?
         } else {
@@ -308,10 +310,10 @@ impl<ATYPE: AddressType> PageAddress<ATYPE> {
     }
 }
 
-impl<ATYPE: AddressType> From<usize> for PageAddress<ATYPE> {
+impl<T: AddressType> From<usize> for PageAddress<T> {
     fn from(addr: usize) -> Self {
         assert!(
-            is_aligned(addr, KernelGranule::SIZE),
+            is_aligned(addr, MSKernel::SIZE),
             "Input usize not page aligned"
         );
 
@@ -321,22 +323,22 @@ impl<ATYPE: AddressType> From<usize> for PageAddress<ATYPE> {
     }
 }
 
-impl<ATYPE: AddressType> From<Address<ATYPE>> for PageAddress<ATYPE> {
-    fn from(addr: Address<ATYPE>) -> Self {
+impl<T: AddressType> From<Address<T>> for PageAddress<T> {
+    fn from(addr: Address<T>) -> Self {
         assert!(addr.is_page_aligned(), "Input Address not page aligned");
 
         Self { inner: addr }
     }
 }
 
-impl<ATYPE: AddressType> Step for PageAddress<ATYPE> {
+impl<T: AddressType> Step for PageAddress<T> {
     fn steps_between(start: &Self, end: &Self) -> Option<usize> {
         if start > end {
             return None;
         }
 
         // Since start <= end, do unchecked arithmetic.
-        Some((end.inner.as_usize() - start.inner.as_usize()) >> KernelGranule::SHIFT)
+        Some((end.inner.as_usize() - start.inner.as_usize()) >> MSKernel::SHIFT)
     }
 
     fn forward_checked(start: Self, count: usize) -> Option<Self> {
@@ -350,48 +352,33 @@ impl<ATYPE: AddressType> Step for PageAddress<ATYPE> {
 
 /// A type that describes a region of memory in quantities of pages.
 #[derive(Copy, Clone, Debug, Eq, PartialOrd, PartialEq)]
-pub struct MemoryRegion<ATYPE: AddressType> {
-    start: PageAddress<ATYPE>,
-    end_exclusive: PageAddress<ATYPE>,
+pub struct MemoryRegion<T: AddressType> {
+    pub start_page: PageAddress<T>,
+    pub end_page_exclusive: PageAddress<T>,
 }
 
-impl<ATYPE: AddressType> MemoryRegion<ATYPE> {
+impl<T: AddressType> MemoryRegion<T> {
     /// Create an instance.
-    pub fn new(start: PageAddress<ATYPE>, end_exclusive: PageAddress<ATYPE>) -> Self {
-        assert!(start <= end_exclusive);
+    pub fn new(start_addr: PageAddress<T>, end_addr_exclusive: PageAddress<T>) -> Self {
+        assert!(start_addr <= end_addr_exclusive);
 
         Self {
-            start,
-            end_exclusive,
+            start_page: start_addr,
+            end_page_exclusive: end_addr_exclusive,
         }
     }
 
-    fn as_range(&self) -> Range<PageAddress<ATYPE>> {
+    fn as_range(&self) -> Range<PageAddress<T>> {
         self.into_iter()
     }
 
-    /// Returns the start page address.
-    pub fn start_page_addr(&self) -> PageAddress<ATYPE> {
-        self.start
-    }
-
-    /// Returns the start address.
-    pub fn start_addr(&self) -> Address<ATYPE> {
-        self.start.into_inner()
-    }
-
     /// Returns the exclusive end page address.
-    pub fn end_exclusive_page_addr(&self) -> PageAddress<ATYPE> {
-        self.end_exclusive
-    }
-
-    /// Returns the exclusive end page address.
-    pub fn end_inclusive_page_addr(&self) -> PageAddress<ATYPE> {
-        self.end_exclusive.checked_offset(-1).unwrap()
+    pub fn end_inclusive_page_addr(&self) -> PageAddress<T> {
+        self.end_page_exclusive.checked_offset(-1).unwrap()
     }
 
     /// Checks if self contains an address.
-    pub fn contains(&self, addr: Address<ATYPE>) -> bool {
+    pub fn contains(&self, addr: Address<T>) -> bool {
         let page_addr = PageAddress::from(addr.align_down_page());
         self.as_range().contains(&page_addr)
     }
@@ -400,20 +387,20 @@ impl<ATYPE: AddressType> MemoryRegion<ATYPE> {
     pub fn overlaps(&self, other_region: &Self) -> bool {
         let self_range = self.as_range();
 
-        self_range.contains(&other_region.start_page_addr())
+        self_range.contains(&other_region.start_page)
             || self_range.contains(&other_region.end_inclusive_page_addr())
     }
 
     /// Returns the number of pages contained in this region.
     pub fn num_pages(&self) -> usize {
-        PageAddress::steps_between(&self.start, &self.end_exclusive).unwrap()
+        PageAddress::steps_between(&self.start_page, &self.end_page_exclusive).unwrap()
     }
 
     /// Returns the size in bytes of this region.
     pub fn size(&self) -> usize {
         // Invariant: start <= end_exclusive, so do unchecked arithmetic.
-        let end_exclusive = self.end_exclusive.into_inner().as_usize();
-        let start = self.start.into_inner().as_usize();
+        let end_exclusive = self.end_page_exclusive.address().as_usize();
+        let start = self.start_page.address().as_usize();
 
         end_exclusive - start
     }
@@ -435,21 +422,20 @@ impl<ATYPE: AddressType> MemoryRegion<ATYPE> {
     pub fn take_first_n_pages(&mut self, num_pages: NonZeroUsize) -> Result<Self, &'static str> {
         let count: usize = num_pages.into();
 
-        let left_end_exclusive = self.start.checked_offset(count as isize);
-        let left_end_exclusive = match left_end_exclusive {
+        let left_end_exclusive = match self.start_page.checked_offset(count as isize) {
             None => return Err("Overflow while calculating left_end_exclusive"),
             Some(x) => x,
         };
 
-        if left_end_exclusive > self.end_exclusive {
+        if left_end_exclusive > self.end_page_exclusive {
             return Err("Not enough free pages");
         }
 
         let allocation = Self {
-            start: self.start,
-            end_exclusive: left_end_exclusive,
+            start_page: self.start_page,
+            end_page_exclusive: left_end_exclusive,
         };
-        self.start = left_end_exclusive;
+        self.start_page = left_end_exclusive;
 
         Ok(allocation)
     }
@@ -461,8 +447,8 @@ impl<ATYPE: AddressType> IntoIterator for MemoryRegion<ATYPE> {
 
     fn into_iter(self) -> Self::IntoIter {
         Range {
-            start: self.start,
-            end: self.end_exclusive,
+            start: self.start_page,
+            end: self.end_page_exclusive,
         }
     }
 }
@@ -470,11 +456,11 @@ impl<ATYPE: AddressType> IntoIterator for MemoryRegion<ATYPE> {
 impl From<MMIODescriptor> for MemoryRegion<Physical> {
     fn from(desc: MMIODescriptor) -> Self {
         let start = PageAddress::from(desc.start_addr.align_down_page());
-        let end_exclusive = PageAddress::from(desc.end_addr_exclusive().align_up_page());
+        let end_exclusive = PageAddress::from(desc.end_addr_exclusive.align_up_page());
 
         Self {
-            start,
-            end_exclusive,
+            start_page: start,
+            end_page_exclusive: end_exclusive,
         }
     }
 }
@@ -482,8 +468,8 @@ impl From<MMIODescriptor> for MemoryRegion<Physical> {
 /// An MMIO descriptor for use in device drivers.
 #[derive(Copy, Clone)]
 pub struct MMIODescriptor {
-    start_addr: Address<Physical>,
-    end_addr_exclusive: Address<Physical>,
+    pub start_addr: Address<Physical>,
+    pub end_addr_exclusive: Address<Physical>,
 }
 
 impl MMIODescriptor {
@@ -496,15 +482,5 @@ impl MMIODescriptor {
             start_addr,
             end_addr_exclusive,
         }
-    }
-
-    /// Return the start address.
-    pub const fn start_addr(&self) -> Address<Physical> {
-        self.start_addr
-    }
-
-    /// Return the exclusive end address.
-    pub fn end_addr_exclusive(&self) -> Address<Physical> {
-        self.end_addr_exclusive
     }
 }

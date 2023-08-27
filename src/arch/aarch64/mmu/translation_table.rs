@@ -10,11 +10,20 @@ use tock_registers::{
 
 use crate::memory::{
     mmu::{
-        mair, AccessPermissions, AttributeFields, Granule512MiB, Granule64KiB, MemAttributes,
-        MemoryRegion, PageAddress,
+        AccessPermissions, AttributeFields, MS512MiB, MS64KiB, MemAttributes, MemoryRegion,
+        PageAddress,
     },
     Address, Physical, Virtual,
 };
+
+use super::TranslationTable;
+
+/// Constants for indexing the MAIR_EL1.
+#[allow(dead_code)]
+mod mair {
+    pub const DEVICE: u64 = 0;
+    pub const NORMAL: u64 = 1;
+}
 
 // A table descriptor, as per ARMv8-A Architecture Reference Manual Figure D5-15.
 register_bitfields! {u64,
@@ -106,7 +115,7 @@ impl<const NUM_TABLES: usize> FixedSizeTranslationTable<NUM_TABLES> {
     /// Create an instance.
     #[allow(clippy::assertions_on_constants)]
     pub const fn new() -> Self {
-        assert!(crate::bsp::memory::mmu::KernelGranule::SIZE == Granule64KiB::SIZE);
+        assert!(crate::bsp::memory::mmu::MSKernel::SIZE == MS64KiB::SIZE);
 
         // Can't have a zero-sized address space.
         assert!(NUM_TABLES > 0);
@@ -124,9 +133,9 @@ impl<const NUM_TABLES: usize> FixedSizeTranslationTable<NUM_TABLES> {
         &self,
         virt_page_addr: PageAddress<Virtual>,
     ) -> Result<(usize, usize), &'static str> {
-        let addr = virt_page_addr.into_inner().as_usize();
-        let lvl2_index = addr >> Granule512MiB::SHIFT;
-        let lvl3_index = (addr & Granule512MiB::MASK) >> Granule64KiB::SHIFT;
+        let addr = virt_page_addr.address().as_usize();
+        let lvl2_index = addr >> MS512MiB::SHIFT;
+        let lvl3_index = (addr & MS512MiB::MASK) >> MS64KiB::SHIFT;
 
         if lvl2_index > (NUM_TABLES - 1) {
             return Err("Virtual page is out of bounds of translation table");
@@ -168,9 +177,7 @@ impl<const NUM_TABLES: usize> FixedSizeTranslationTable<NUM_TABLES> {
     }
 }
 
-impl<const NUM_TABLES: usize> crate::memory::mmu::translation_table::interface::TranslationTable
-    for FixedSizeTranslationTable<NUM_TABLES>
-{
+impl<const NUM_TABLES: usize> TranslationTable for FixedSizeTranslationTable<NUM_TABLES> {
     fn init(&mut self) {
         if self.initialized {
             return;
@@ -203,8 +210,7 @@ impl<const NUM_TABLES: usize> crate::memory::mmu::translation_table::interface::
             return Err("Tried to map memory regions with unequal sizes");
         }
 
-        if phys_region.end_exclusive_page_addr()
-            > crate::bsp::memory::phys_addr_space_end_exclusive_addr()
+        if phys_region.end_page_exclusive > crate::bsp::memory::phys_addr_space_end_exclusive_addr()
         {
             return Err("Tried to map outside of physical address space");
         }
@@ -266,7 +272,7 @@ impl TableDescriptor {
     pub fn from_next_lvl_table_addr(phys_next_lvl_table_addr: Address<Physical>) -> Self {
         let val = InMemoryRegister::<u64, STAGE1_TABLE_DESCRIPTOR::Register>::new(0);
 
-        let shifted = phys_next_lvl_table_addr.as_usize() >> Granule64KiB::SHIFT;
+        let shifted = phys_next_lvl_table_addr.as_usize() >> MS64KiB::SHIFT;
         val.write(
             STAGE1_TABLE_DESCRIPTOR::NEXT_LEVEL_TABLE_ADDR_64KiB.val(shifted as u64)
                 + STAGE1_TABLE_DESCRIPTOR::TYPE::Table
@@ -301,7 +307,7 @@ impl PageDescriptor {
     ) -> Self {
         let val = InMemoryRegister::<u64, STAGE1_PAGE_DESCRIPTOR::Register>::new(0);
 
-        let shifted = phys_output_addr.into_inner().as_usize() as u64 >> Granule64KiB::SHIFT;
+        let shifted = phys_output_addr.address().as_usize() as u64 >> MS64KiB::SHIFT;
         val.write(
             STAGE1_PAGE_DESCRIPTOR::OUTPUT_ADDR_64KiB.val(shifted)
                 + STAGE1_PAGE_DESCRIPTOR::AF::True
@@ -328,9 +334,9 @@ impl PageDescriptor {
 impl<const AS_SIZE: usize> crate::memory::mmu::AssociatedTranslationTable
     for crate::memory::mmu::AddressSpace<AS_SIZE>
 where
-    [u8; Self::SIZE >> Granule512MiB::SHIFT]: Sized,
+    [u8; Self::SIZE >> MS512MiB::SHIFT]: Sized,
 {
-    type TableStartFromBottom = FixedSizeTranslationTable<{ Self::SIZE >> Granule512MiB::SHIFT }>;
+    type Table = FixedSizeTranslationTable<{ Self::SIZE >> MS512MiB::SHIFT }>;
 }
 
 /// Convert the HW-specific attributes of the MMU to kernel's generic memory attributes.

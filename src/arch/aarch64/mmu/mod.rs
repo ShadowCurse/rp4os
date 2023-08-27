@@ -2,30 +2,18 @@
 
 use crate::{
     bsp,
-    memory::{Address, Physical},
+    memory::{mmu::MS512MiB, Address, Physical},
 };
 use aarch64_cpu::{asm::barrier, registers::*};
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
-use super::{AddressSpace, MMUEnableError, TranslationGranule};
-
-pub static MMU: MemoryManagementUnit = MemoryManagementUnit;
-
-pub type Granule64KiB = TranslationGranule<{ 64 * 1024 }>;
-pub type Granule512MiB = TranslationGranule<{ 512 * 1024 * 1024 }>;
-
-/// Constants for indexing the MAIR_EL1.
-#[allow(dead_code)]
-pub mod mair {
-    pub const DEVICE: u64 = 0;
-    pub const NORMAL: u64 = 1;
-}
+use super::{AddressSpace, MMUEnableError, MemoryManagementUnit};
 
 impl<const AS_SIZE: usize> AddressSpace<AS_SIZE> {
     /// Checks for architectural restrictions.
     pub const fn arch_address_space_size_sanity_checks() {
         // Size must be at least one full 512 MiB table.
-        assert!((AS_SIZE % Granule512MiB::SIZE) == 0);
+        assert!((AS_SIZE % MS512MiB::SIZE) == 0);
 
         // Check for 48 bit virtual address size as maximum, which is supported by any ARMv8
         // version.
@@ -34,9 +22,9 @@ impl<const AS_SIZE: usize> AddressSpace<AS_SIZE> {
 }
 
 /// Memory Management Unit type.
-pub struct MemoryManagementUnit;
+pub struct Aarch64Mmu;
 
-impl MemoryManagementUnit {
+impl Aarch64Mmu {
     /// Setup function for the MAIR_EL1 register.
     fn set_up_mair(&self) {
         // Define the memory types being mapped.
@@ -69,7 +57,7 @@ impl MemoryManagementUnit {
     }
 }
 
-impl crate::memory::mmu::interface::MMU for MemoryManagementUnit {
+impl MemoryManagementUnit for Aarch64Mmu {
     unsafe fn enable_mmu_and_caching(
         &self,
         phys_tables_base_addr: Address<Physical>,

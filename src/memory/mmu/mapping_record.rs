@@ -1,10 +1,13 @@
-use super::{
-    AccessPermissions, Address, AttributeFields, MMIODescriptor, MemAttributes, MemoryRegion,
-    Physical, Virtual,
-};
 use crate::{
-    bsp::memory::mmu::KernelGranule, info, size_human_readable_ceil, synchronization,
-    synchronization::InitStateLock, warn,
+    bsp::memory::mmu::MSKernel,
+    info,
+    memory::{
+        mmu::{AccessPermissions, AttributeFields, MMIODescriptor, MemAttributes, MemoryRegion},
+        Address, Physical, Virtual,
+    },
+    size_human_readable_ceil, synchronization,
+    synchronization::InitStateLock,
+    warn,
 };
 use synchronization::ReadWriteExclusive;
 
@@ -34,8 +37,8 @@ impl MappingRecordEntry {
     ) -> Self {
         Self {
             users: [Some(name), None, None, None, None],
-            phys_start_addr: phys_region.start_addr(),
-            virt_start_addr: virt_region.start_addr(),
+            phys_start_addr: phys_region.start_page.address(),
+            virt_start_addr: virt_region.start_page.address(),
             num_pages: phys_region.num_pages(),
             attribute_fields: *attr,
         }
@@ -91,7 +94,7 @@ impl MappingRecords {
             .filter_map(|x| x.as_mut())
             .filter(|x| x.attribute_fields.mem_attributes == MemAttributes::Device)
             .find(|x| {
-                if x.phys_start_addr != phys_region.start_addr() {
+                if x.phys_start_addr != phys_region.start_page.address() {
                     return false;
                 }
 
@@ -133,7 +136,7 @@ impl MappingRecords {
         info!("      -------------------------------------------------------------------------------------------------------------------------------------------");
 
         for i in self.inner.iter().flatten() {
-            let size = i.num_pages * KernelGranule::SIZE;
+            let size = i.num_pages * MSKernel::SIZE;
             let virt_start = i.virt_start_addr;
             let virt_end_inclusive = virt_start + (size - 1);
             let phys_start = i.phys_start_addr;

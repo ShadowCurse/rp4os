@@ -80,17 +80,17 @@ fn kernel_main() -> ! {
     exception::asynchronous::irq_manager().print_handler();
 
     info!("Kernel heap:");
-    memory::heap_alloc::kernel_heap_allocator().print_usage();
+    memory::heap_alloc::KERNEL_HEAP_ALLOCATOR.print_usage();
 
     {
         let _numbers = vec![1, 2, 3, 4];
 
         info!("Kernel heap:");
-        memory::heap_alloc::kernel_heap_allocator().print_usage();
+        memory::heap_alloc::KERNEL_HEAP_ALLOCATOR.print_usage();
     }
 
     info!("Kernel heap:");
-    memory::heap_alloc::kernel_heap_allocator().print_usage();
+    memory::heap_alloc::KERNEL_HEAP_ALLOCATOR.print_usage();
 
     info!("Echoing input now");
     cpu::wait_forever();

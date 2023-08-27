@@ -1,9 +1,8 @@
 pub mod heap_alloc;
 pub mod mmu;
 
-use crate::{align_down, align_up, bsp, is_aligned};
+use crate::{align_down, align_up, bsp::memory::mmu::MSKernel, is_aligned};
 use core::{
-    fmt,
     marker::PhantomData,
     ops::{Add, Sub},
 };
@@ -21,23 +20,24 @@ pub trait AddressType: Copy + Clone + PartialOrd + PartialEq + Ord + Eq {}
 
 /// Zero-sized type to mark a physical address.
 #[derive(Copy, Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
-pub enum Physical {}
+pub struct Physical {}
+
+impl AddressType for Physical {}
 
 /// Zero-sized type to mark a virtual address.
 #[derive(Copy, Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
-pub enum Virtual {}
+pub struct Virtual {}
+
+impl AddressType for Virtual {}
 
 /// Generic address type.
 #[derive(Copy, Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
-pub struct Address<ATYPE: AddressType> {
+pub struct Address<T: AddressType> {
     value: usize,
-    _address_type: PhantomData<fn() -> ATYPE>,
+    _address_type: PhantomData<fn() -> T>,
 }
 
-impl AddressType for Physical {}
-impl AddressType for Virtual {}
-
-impl<ATYPE: AddressType> Address<ATYPE> {
+impl<T: AddressType> Address<T> {
     /// Create an instance.
     pub const fn new(value: usize) -> Self {
         Self {
@@ -54,7 +54,7 @@ impl<ATYPE: AddressType> Address<ATYPE> {
     /// Align down to page size.
     #[must_use]
     pub const fn align_down_page(self) -> Self {
-        let aligned = align_down(self.value, bsp::memory::mmu::KernelGranule::SIZE);
+        let aligned = align_down(self.value, MSKernel::SIZE);
 
         Self::new(aligned)
     }
@@ -62,23 +62,23 @@ impl<ATYPE: AddressType> Address<ATYPE> {
     /// Align up to page size.
     #[must_use]
     pub const fn align_up_page(self) -> Self {
-        let aligned = align_up(self.value, bsp::memory::mmu::KernelGranule::SIZE);
+        let aligned = align_up(self.value, MSKernel::SIZE);
 
         Self::new(aligned)
     }
 
     /// Checks if the address is page aligned.
     pub const fn is_page_aligned(&self) -> bool {
-        is_aligned(self.value, bsp::memory::mmu::KernelGranule::SIZE)
+        is_aligned(self.value, MSKernel::SIZE)
     }
 
     /// Return the address' offset into the corresponding page.
     pub const fn offset_into_page(&self) -> usize {
-        self.value & bsp::memory::mmu::KernelGranule::MASK
+        self.value & MSKernel::MASK
     }
 }
 
-impl<ATYPE: AddressType> Add<usize> for Address<ATYPE> {
+impl<T: AddressType> Add<usize> for Address<T> {
     type Output = Self;
 
     #[inline(always)]
@@ -90,11 +90,11 @@ impl<ATYPE: AddressType> Add<usize> for Address<ATYPE> {
     }
 }
 
-impl<ATYPE: AddressType> Sub<Address<ATYPE>> for Address<ATYPE> {
+impl<T: AddressType> Sub<Address<T>> for Address<T> {
     type Output = Self;
 
     #[inline(always)]
-    fn sub(self, rhs: Address<ATYPE>) -> Self::Output {
+    fn sub(self, rhs: Address<T>) -> Self::Output {
         match self.value.checked_sub(rhs.value) {
             None => panic!("Overflow on Address::sub"),
             Some(x) => Self::new(x),
@@ -102,9 +102,9 @@ impl<ATYPE: AddressType> Sub<Address<ATYPE>> for Address<ATYPE> {
     }
 }
 
-impl fmt::Display for Address<Physical> {
+impl core::fmt::Display for Address<Physical> {
     // Don't expect to see physical addresses greater than 40 bit.
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let q3: u8 = ((self.value >> 32) & 0xff) as u8;
         let q2: u16 = ((self.value >> 16) & 0xffff) as u16;
         let q1: u16 = (self.value & 0xffff) as u16;
@@ -116,8 +116,8 @@ impl fmt::Display for Address<Physical> {
     }
 }
 
-impl fmt::Display for Address<Virtual> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl core::fmt::Display for Address<Virtual> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let q4: u16 = ((self.value >> 48) & 0xffff) as u16;
         let q3: u16 = ((self.value >> 32) & 0xffff) as u16;
         let q2: u16 = ((self.value >> 16) & 0xffff) as u16;

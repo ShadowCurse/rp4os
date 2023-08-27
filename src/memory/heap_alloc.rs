@@ -1,11 +1,6 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
-//
-// Copyright (c) 2022 Andre Richter <andre.o.richter@gmail.com>
-
-//! Heap allocation.
-
 use crate::{
-    bsp, info,
+    bsp::memory::mmu::virt_heap_region,
+    info,
     memory::{Address, Virtual},
     size_human_readable_ceil, synchronization,
     synchronization::IRQSafeNullLock,
@@ -14,26 +9,35 @@ use crate::{
 use alloc::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicBool, Ordering};
 use linked_list_allocator::Heap as LinkedListHeap;
+use synchronization::Mutex;
 
-//--------------------------------------------------------------------------------------------------
-// Public Definitions
-//--------------------------------------------------------------------------------------------------
+#[global_allocator]
+pub static KERNEL_HEAP_ALLOCATOR: HeapAllocator = HeapAllocator::new();
+
+/// Query the BSP for the heap region and initialize the kernel's heap allocator with it.
+pub fn kernel_init_heap_allocator() {
+    static INIT_DONE: AtomicBool = AtomicBool::new(false);
+    if INIT_DONE.load(Ordering::Relaxed) {
+        warn!("Already initialized");
+        return;
+    }
+
+    let region = virt_heap_region();
+
+    KERNEL_HEAP_ALLOCATOR.inner.lock(|inner| unsafe {
+        inner.init(
+            region.start_page.address().as_usize() as *mut u8,
+            region.size(),
+        )
+    });
+
+    INIT_DONE.store(true, Ordering::Relaxed);
+}
 
 /// A heap allocator that can be lazyily initialized.
 pub struct HeapAllocator {
     inner: IRQSafeNullLock<LinkedListHeap>,
 }
-
-//--------------------------------------------------------------------------------------------------
-// Global instances
-//--------------------------------------------------------------------------------------------------
-
-#[global_allocator]
-static KERNEL_HEAP_ALLOCATOR: HeapAllocator = HeapAllocator::new();
-
-//--------------------------------------------------------------------------------------------------
-// Private Code
-//--------------------------------------------------------------------------------------------------
 
 #[inline(always)]
 fn debug_print_alloc_dealloc(operation: &'static str, ptr: *mut u8, layout: Layout) {
@@ -42,10 +46,10 @@ fn debug_print_alloc_dealloc(operation: &'static str, ptr: *mut u8, layout: Layo
     let addr = Address::<Virtual>::new(ptr as usize);
 
     info!(
-        "Kernel Heap: {}\n      \
-        Size:     {:#x} ({} {})\n      \
-        Start:    {}\n      \
-        End excl: {}\n\n      \
+        "Kernel Heap: {}\n
+        Size:     {:#x} ({} {})\n
+        Start:    {}\n
+        End excl: {}\n
         ",
         operation,
         size,
@@ -56,19 +60,9 @@ fn debug_print_alloc_dealloc(operation: &'static str, ptr: *mut u8, layout: Layo
     );
 }
 
-//--------------------------------------------------------------------------------------------------
-// Public Code
-//--------------------------------------------------------------------------------------------------
-use synchronization::Mutex;
-
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
     panic!("Allocation error: {:?}", layout)
-}
-
-/// Return a reference to the kernel's heap allocator.
-pub fn kernel_heap_allocator() -> &'static HeapAllocator {
-    &KERNEL_HEAP_ALLOCATOR
 }
 
 impl HeapAllocator {
@@ -126,21 +120,4 @@ unsafe impl GlobalAlloc for HeapAllocator {
 
         debug_print_alloc_dealloc("Free", ptr, layout);
     }
-}
-
-/// Query the BSP for the heap region and initialize the kernel's heap allocator with it.
-pub fn kernel_init_heap_allocator() {
-    static INIT_DONE: AtomicBool = AtomicBool::new(false);
-    if INIT_DONE.load(Ordering::Relaxed) {
-        warn!("Already initialized");
-        return;
-    }
-
-    let region = bsp::memory::mmu::virt_heap_region();
-
-    KERNEL_HEAP_ALLOCATOR.inner.lock(|inner| unsafe {
-        inner.init(region.start_addr().as_usize() as *mut u8, region.size())
-    });
-
-    INIT_DONE.store(true, Ordering::Relaxed);
 }
