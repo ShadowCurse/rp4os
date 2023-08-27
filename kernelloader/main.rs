@@ -25,7 +25,7 @@ unsafe fn kernel_init() -> ! {
     }
 
     // Initialize all device drivers.
-    driver::driver_manager().init_drivers();
+    driver::DRIVER_MANAGER.init_drivers_and_irqs();
     // println! is usable from here on.
 
     // Transition from unsafe to safe.
